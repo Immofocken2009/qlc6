@@ -8,7 +8,7 @@
 - [x] Phase 4  Arbitrary channels (dimmer, colour, gobo, raw) in EFXFixture
 - [x] Phase 5  QML editor: effect picker and dynamic parameter controls (no Lissajous-specific fields)
 - [x] Phase 6  Library hot reload (QFileSystemWatcher)
-- [ ] Phase 7  Built-in HTTP API server for uploading effects from an external generator
+- [x] Phase 7  Built-in HTTP API server for uploading effects from an external generator
                (user request, project independent library)
 - [ ] Phase 8  Visual effect authoring in the QML editor (user request):
                - draw own paths / waypoints, e.g. points on the stage floor that the heads

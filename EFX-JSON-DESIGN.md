@@ -127,3 +127,21 @@ Max. 1024 Keys pro Spur.
   markiert, Fixtures bleiben unverändert, es gibt eine Warnung im Log.
 - Parameter-Overrides liegen nur im Projekt, die Bibliotheksdatei bleibt
   unverändert.
+
+## Upload API (phase 7)
+
+The QLC+ web server (the same one used for the web access, `-w`, default port 9999)
+accepts effect uploads. No authentication is added by the API itself; if web access
+authentication is enabled, the user must be a super admin.
+
+    POST /api/v1/effects            body: effect JSON (or multipart file upload)
+    PUT  /api/v1/effects/<id>       same, the id in the document must equal <id>
+
+    curl -X POST --data-binary @myeffect.json http://localhost:9999/api/v1/effects
+
+Success: `200 {"ok":true,"id":"<id>"}`. Errors are `{"error":"..."}`: 400 invalid JSON
+or schema, 405 wrong method, 413 larger than 2 MB, 500 cannot write. The effect is
+validated, written atomically to the user effect directory and is immediately available
+to all projects (an effect with the same id is replaced; a user effect overrides a
+system effect with the same id). Open editors and running EFX pick it up through the
+library hot reload.

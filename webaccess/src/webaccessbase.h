@@ -35,6 +35,7 @@ class VirtualConsole;
 class SimpleDesk;
 class Doc;
 
+class QJsonObject;
 class QHttpServer;
 class QHttpRequest;
 class QHttpResponse;
@@ -69,6 +70,8 @@ protected:
     QByteArray extractProjectXml(const QHttpRequest *req) const;
     void sendProjectLoadingResponse(QHttpResponse *resp) const;
     void sendNotFound(QHttpResponse *resp) const;
+    void sendJsonStatus(QHttpResponse *resp, int status, const QJsonObject &obj) const;
+    void handleEffectUpload(const QHttpRequest *req, QHttpResponse *resp, const QString &reqUrl) const;
     void sendHtmlResponse(QHttpResponse *resp, const QString &content) const;
     bool requireAuthLevel(QHttpResponse *resp, const WebAccessUser &user, WebAccessUserLevel level) const;
     bool handleCommonWebSocketCommand(QHttpConnection *conn, const WebAccessUser *user,

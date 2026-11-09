@@ -35,6 +35,9 @@
 #include "qlcconfig.h"
 #include "qlcfile.h"
 #include "doc.h"
+#include "efxlibrary.h"
+#include <QJsonDocument>
+#include <QJsonObject>
 #include "inputpatch.h"
 #include "audiocapture.h"
 #include "audiorenderer.h"
@@ -362,6 +365,74 @@ bool WebAccessBase::requireAuthLevel(QHttpResponse *resp, const WebAccessUser &u
     return true;
 }
 
+void WebAccessBase::sendJsonStatus(QHttpResponse *resp, int status, const QJsonObject &obj) const
+{
+    const QByteArray json = QJsonDocument(obj).toJson(QJsonDocument::Compact);
+    resp->setHeader("Content-Type", "application/json");
+    resp->setHeader("Content-Length", QString::number(json.size()));
+    resp->writeHead(status);
+    resp->end(json);
+}
+
+/*
+ * POST /api/v1/effects          upload an effect JSON (the id comes from the document)
+ * PUT  /api/v1/effects/<id>     same, but the id in the URL must match the document
+ * The effect is validated, stored in the user effect library and is then available
+ * to all projects. The body is the effect JSON itself or a multipart file upload.
+ */
+void WebAccessBase::handleEffectUpload(const QHttpRequest *req, QHttpResponse *resp,
+                                       const QString &reqUrl) const
+{
+    const int MaxEffectSize = 2 * 1024 * 1024;
+
+    if (req->method() != QHttpRequest::HTTP_POST && req->method() != QHttpRequest::HTTP_PUT)
+    {
+        resp->setHeader("Allow", "POST, PUT");
+        sendJsonStatus(resp, 405, QJsonObject{{"error", "method not allowed, use POST or PUT"}});
+        return;
+    }
+
+    QByteArray json;
+    if (!extractMultipartFilePayload(req, json))
+    {
+        sendJsonStatus(resp, 400, QJsonObject{{"error", "empty request body"}});
+        return;
+    }
+    if (json.size() > MaxEffectSize)
+    {
+        sendJsonStatus(resp, 413, QJsonObject{{"error", "effect too large"}});
+        return;
+    }
+
+    QString error, id;
+    const QString urlId = reqUrl.mid(QString("/api/v1/effects/").length());
+    if (reqUrl.startsWith("/api/v1/effects/") && !urlId.isEmpty())
+    {
+        EFXEffectPtr check = EFXEffect::fromJson(json, &error);
+        if (check.isNull())
+        {
+            sendJsonStatus(resp, 400, QJsonObject{{"error", error}});
+            return;
+        }
+        if (check->id() != urlId)
+        {
+            sendJsonStatus(resp, 400, QJsonObject{{"error", "effect id does not match the URL"}});
+            return;
+        }
+    }
+
+    if (!EFXLibrary::instance()->addUserEffect(json, &error, &id))
+    {
+        // validation errors are the caller's fault, write errors are ours
+        const bool invalid = !error.startsWith("cannot write");
+        sendJsonStatus(resp, invalid ? 400 : 500, QJsonObject{{"error", error}});
+        return;
+    }
+
+    qDebug() << "EFX effect uploaded through the API:" << id;
+    sendJsonStatus(resp, 200, QJsonObject{{"ok", true}, {"id", id}});
+}
+
 WebAccessBase::CommonRequestResult WebAccessBase::handleCommonHTTPRequest(const QHttpRequest *req, QHttpResponse *resp,
                                                                           const WebAccessUser &user,
                                                                           const QString &reqUrl,
@@ -391,6 +462,15 @@ WebAccessBase::CommonRequestResult WebAccessBase::handleCommonHTTPRequest(const 
 
         handleProjectLoad(projectXML);
 
+        return CommonRequestResult::Handled;
+    }
+    else if (reqUrl == "/api/v1/effects" || reqUrl.startsWith("/api/v1/effects/"))
+    {
+        if (!requireAuthLevel(resp, user, SUPER_ADMIN_LEVEL))
+            return CommonRequestResult::Handled;
+        if (req == nullptr)
+            return CommonRequestResult::NotHandled;
+        handleEffectUpload(req, resp, reqUrl);
         return CommonRequestResult::Handled;
     }
     else if (reqUrl == "/loadFixture")
