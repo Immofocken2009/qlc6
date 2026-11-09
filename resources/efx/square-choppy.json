@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "id": "square-choppy",
+  "name": "Square (choppy)",
+  "version": 1,
+  "description": "Square, jumping between the corners and edge centres",
+  "channels": [
+    {
+      "target": "pan",
+      "expr": "round(cos(theta))"
+    },
+    {
+      "target": "tilt",
+      "expr": "round(sin(theta))"
+    }
+  ]
+}

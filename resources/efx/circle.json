@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "id": "circle",
+  "name": "Circle",
+  "version": 1,
+  "description": "Circular movement",
+  "channels": [
+    {
+      "target": "pan",
+      "expr": "cos(theta + pi/2)"
+    },
+    {
+      "target": "tilt",
+      "expr": "cos(theta)"
+    }
+  ]
+}

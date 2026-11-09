@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "id": "square",
+  "name": "Square",
+  "version": 1,
+  "description": "Square with smooth edges",
+  "channels": [
+    {
+      "target": "pan",
+      "expr": "if(theta/(pi/2) < 1, 2*(theta/(pi/2)) - 1, if(theta/(pi/2) < 2, 1, if(theta/(pi/2) < 3, 5 - 2*(theta/(pi/2)), -1)))"
+    },
+    {
+      "target": "tilt",
+      "expr": "if(theta/(pi/2) < 1, 1, if(theta/(pi/2) < 2, 3 - 2*(theta/(pi/2)), if(theta/(pi/2) < 3, -1, 2*(theta/(pi/2)) - 7)))"
+    }
+  ]
+}

@@ -1,0 +1,51 @@
+{
+  "schema": 1,
+  "id": "lissajous",
+  "name": "Lissajous",
+  "version": 1,
+  "description": "Lissajous figure; a frequency of 0 gives a triangle wave",
+  "params": [
+    {
+      "id": "xfreq",
+      "label": "X Frequency",
+      "type": "int",
+      "min": 0,
+      "max": 32,
+      "default": 2
+    },
+    {
+      "id": "yfreq",
+      "label": "Y Frequency",
+      "type": "int",
+      "min": 0,
+      "max": 32,
+      "default": 3
+    },
+    {
+      "id": "xphase",
+      "label": "X Phase",
+      "type": "int",
+      "min": 0,
+      "max": 359,
+      "default": 90
+    },
+    {
+      "id": "yphase",
+      "label": "Y Phase",
+      "type": "int",
+      "min": 0,
+      "max": 359,
+      "default": 0
+    }
+  ],
+  "channels": [
+    {
+      "target": "pan",
+      "expr": "if(xfreq > 0, cos(xfreq*theta - xphase*pi/180), tri((theta + xphase*pi/180)/(2*pi)))"
+    },
+    {
+      "target": "tilt",
+      "expr": "if(yfreq > 0, cos(yfreq*theta - yphase*pi/180), tri((theta + yphase*pi/180)/(2*pi)))"
+    }
+  ]
+}

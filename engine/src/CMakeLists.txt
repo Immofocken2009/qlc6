@@ -22,7 +22,10 @@ add_library(${module_name} ${QLC_LIB_TYPE}
     dmxsource.h
     doc.cpp doc.h
     efx.cpp efx.h
+    efxeffect.cpp efxeffect.h
+    efxexpression.cpp efxexpression.h
     efxfixture.cpp efxfixture.h
+    efxlibrary.cpp efxlibrary.h
     fadechannel.cpp fadechannel.h
     fixture.cpp fixture.h
     fixturegroup.cpp fixturegroup.h

@@ -19,6 +19,8 @@
 #define TRANSLATIONDIR "/usr/share/qlcplus/translations5"
 #define RGBSCRIPTDIR "/usr/share/qlcplus/rgbscripts"
 #define USERRGBSCRIPTDIR ".qlcplus/rgbscripts"
+#define EFXEFFECTDIR "/usr/share/qlcplus/effects"
+#define USEREFXEFFECTDIR ".qlcplus/effects"
 #define GOBODIR "/usr/share/qlcplus/gobos"
 #define WEBFILESDIR "/usr/share/qlcplus/web"
 

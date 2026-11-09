@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "id": "line2",
+  "name": "Line 2",
+  "version": 1,
+  "description": "Diagonal line, jumps back at the end",
+  "channels": [
+    {
+      "target": "pan",
+      "expr": "theta/pi - 1"
+    },
+    {
+      "target": "tilt",
+      "expr": "theta/pi - 1"
+    }
+  ]
+}

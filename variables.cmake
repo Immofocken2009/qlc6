@@ -432,6 +432,28 @@ elseif (IOS)
     set(USERRGBSCRIPTDIR "${USERDATADIR}/RGBScripts")
 endif ()
 
+# EFX effects (JSON library)
+if (WIN32)
+    set(EFXEFFECTDIR "Effects")
+elseif (APPLE)
+    set(EFXEFFECTDIR "${DATADIR}/Effects")
+else ()
+    set(EFXEFFECTDIR "${DATADIR}/effects")
+endif ()
+
+if (ANDROID)
+    set(EFXEFFECTDIR "${DATADIR}/effects")
+elseif (IOS)
+    set(EFXEFFECTDIR "Effects")
+endif ()
+
+# User EFX effects
+if (WIN32 OR APPLE)
+    set(USEREFXEFFECTDIR "${USERDATADIR}/Effects")
+else ()
+    set(USEREFXEFFECTDIR "${USERDATADIR}/effects")
+endif ()
+
 # Web Files
 if (WIN32)
     set(WEBFILESDIR "Web")
