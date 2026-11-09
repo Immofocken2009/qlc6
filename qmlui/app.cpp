@@ -43,6 +43,7 @@
 #include <unistd.h>
 
 #include "app.h"
+#include "efxlibrary.h"
 #include "uimanager.h"
 #include "simpledesk.h"
 #include "showmanager.h"
@@ -696,6 +697,9 @@ void App::initDoc()
     /* Load channel modifiers templates */
     m_doc->modifiersCache()->load(QLCModifiersCache::systemTemplateDirectory(), true);
     m_doc->modifiersCache()->load(QLCModifiersCache::userTemplateDirectory());
+
+    /* Load the JSON effect library (system presets, then user effects) */
+    EFXLibrary::instance()->reload();
 
     /* Load RGB scripts */
     m_doc->rgbScriptsCache()->load(RGBScriptsCache::systemScriptsDirectory());
