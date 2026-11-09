@@ -1,0 +1,78 @@
+/*
+  Q Light Controller Plus
+  uimanager.h
+
+  Copyright (c) Massimo Callegari
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0.txt
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+*/
+
+#ifndef UIMANAGER_H
+#define UIMANAGER_H
+
+#include <QQuickView>
+#include <QPointer>
+#include <QObject>
+
+typedef struct
+{
+    QVariant m_default;
+    QVariant m_modified;
+    QString m_category;
+} UiProperty;
+
+class Doc;
+
+class UiManager final : public QObject
+{
+    Q_OBJECT
+
+public:
+    UiManager(QQuickView *view, Doc *doc, QObject *parent = nullptr);
+    ~UiManager();
+
+    /** Initialize the UI settings and load the user configuration.
+     *  Return true if the scaling factor has been automatically set
+     *  to fit the screen and stored as a user setting */
+    bool initialize();
+    void setDefaultParameter(QString category, QString name, QVariant value);
+
+    /** Set the default scaling factor, evaluated to fit the UI
+     *  on the current screen. A user modified value is preserved */
+    void setDefaultScalingFactor(qreal factor);
+
+    Q_INVOKABLE QVariant getDefault(QString name) const;
+
+    Q_INVOKABLE QVariant getModified(QString name) const;
+    Q_INVOKABLE void setModified(QString name, QVariant value);
+
+    Q_INVOKABLE QString userConfFilepath() const;
+    Q_INVOKABLE bool saveSettings() const;
+
+private:
+    /** Reference to the QML view root */
+    QQuickView *m_view;
+
+    /** Reference to the project workspace */
+    Doc *m_doc;
+
+    /** Reference to the UI QML settings */
+    /** The QML UISettings singleton, guarded since owned by the QML engine */
+    QPointer<QObject> m_uiStyle;
+
+    /** A map ok key,value representing every UI parameter
+     *  that can be changed at runtime */
+    QMap<QString, UiProperty> m_parameterMap;
+};
+
+#endif // UIMANAGER_H

@@ -1,0 +1,321 @@
+/*
+  Q Light Controller Plus
+  scriptrunner.h
+
+  Copyright (C) Massimo Callegari
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0.txt
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+*/
+
+#ifndef SCRIPTRUNNER_H
+#define SCRIPTRUNNER_H
+
+#include <QThread>
+#include <QQueue>
+#include <QPair>
+#include <QMap>
+#include <QHash>
+#include <QSet>
+#include <QMutex>
+#include <QWaitCondition>
+#include <QElapsedTimer>
+#include <atomic>
+#include "function.h"
+
+class GenericFader;
+class MasterTimer;
+class QJSEngine;
+class QJSValue;
+class Universe;
+class Doc;
+
+typedef struct
+{
+    quint32 m_universe;
+    quint32 m_fixtureID;
+    quint32 m_channel;
+    uchar m_value;
+    uint m_fadeTime;
+} FixtureValue;
+
+class ScriptRunner final : public QThread
+{
+    Q_OBJECT
+
+    /************************************************************************
+     * Initialization
+     ************************************************************************/
+public:
+    ScriptRunner(Doc *doc, const QString &content, QObject *parent = 0);
+    ~ScriptRunner();
+
+    /** Start the thread execution and therefore the JavaScript code */
+    void execute();
+
+    void stop();
+
+    QStringList collectScriptData();
+
+    int currentWaitTime() const;
+
+    bool write(MasterTimer *timer, QList<Universe*> universes);
+
+    /************************************************************************
+     * JS exported methods
+     ************************************************************************/
+public slots:
+
+    /**
+     * Handle "getChannelValue" command
+     *
+     * @param universe The universe of the channel
+     * @param channel The channel index starting from 0
+     * @return the channel DMX value
+     */
+    int getChannelValue(int universe, int channel);
+
+    /**
+     * Handle "setFixture" command
+     *
+     * @param fxID The Fixture ID
+     * @param channel The fixture channel to control
+     * @param value the DMX value to set
+     * @param time (optional) fade time to reach the requested DMX value
+     * @return true if successful. False on error.
+     */
+    bool setFixture(quint32 fxID, quint32 channel, uchar value, uint time = 0);
+
+    /**
+     * Handle "stopOnExit" command
+     *
+     * @param value Indicate to add (true) or to not add (false) to the Functions started by this script
+     * @return true if successful. False on error.
+     */
+    bool stopOnExit(bool value);
+
+    /**
+     * Handle "startFunction" command
+     *
+     * @param fID The Function ID to start
+     * @return true if successful. False on error.
+     */
+    bool startFunction(quint32 fID);
+
+    /**
+     * Handle "stopFunction" command
+     *
+     * @param fID The Function ID to stop
+     * @return true if successful. False on error.
+     */
+    bool stopFunction(quint32 fID);
+
+    /**
+     * Handle "isFunctionRunning" command
+     *
+     * @param fID The Function ID to be checked
+     * @return true if function is running, otherwise false
+     */
+    bool isFunctionRunning(quint32 fID);
+
+    /**
+     * Handle "getFunctionAttribute" command
+     *
+     * @param fID Function ID
+     * @param attributeIndex Index of the requested attribute
+     * @return the requested attribute value or 0
+     */
+    float getFunctionAttribute(quint32 fID, int attributeIndex) const;
+
+    /**
+     * Handle "setFunctionAttribute" command (int version)
+     *
+     * @param fID The Function ID to be set
+     * @param attributeIndex Index of the attribute to be set
+     * @param value Value of the attribute
+     * @return true if successful. False on error.
+     */
+    bool setFunctionAttribute(quint32 fID, int attributeIndex, float value);
+
+    /**
+     * Handle "setFunctionAttribute" command (string version)
+     *
+     * @param fID The Function ID to be set
+     * @param attributeName Name of the attribute to be set
+     * @param value Value of the attribute
+     * @return true if successful. False on error.
+     */
+    bool setFunctionAttribute(quint32 fID, QString attributeName, float value);
+
+    /**
+     * Handle "systemCommand" command
+     *
+     * @param command The command to execute
+     * @return true if successful. False on error.
+     */
+    bool systemCommand(QString command);
+
+    /**
+     * Handle "waitTime" command (int version)
+     *
+     * @param ms The time in milliseconds to wait
+     * @return true if successful. False on error.
+     */
+    bool waitTime(uint ms);
+
+    /**
+     * Handle "waitTime" command (string version)
+     *
+     * @param time The time as string (e.g. 2s.140) to wait
+     * @return true if successful. False on error.
+     */
+    bool waitTime(QString time);
+
+    /**
+     * Handle "waitFunctionStart" command (string version)
+     *
+     * @param fID The Function ID to wait for starting
+     * @return true if successful. False on error.
+     */
+    bool waitFunctionStart(quint32 fID);
+
+    /**
+     * Handle "waitFunctionStop" command (string version)
+     *
+     * @param fID The Function ID to wait for completion
+     * @return true if successful. False on error.
+     */
+    bool waitFunctionStop(quint32 fID);
+
+    /**
+     * Handle "setBlackout" command
+     *
+     * @param enable If true, requests blackout, otherwise release blackout
+     * @return true if successful. False on error.
+     */
+    bool setBlackout(bool enable);
+
+    /**
+     * Set the BPM (beat per minute) number of the internal beat generator
+     *
+     * @param bpm the number of beats per minute requested
+     * @return true if successful. False on error.
+     */
+    bool setBPM(int bpm);
+
+    /**
+     * Handle "random" command (string version)
+     *
+     * @param minTime Minimum time, expressed as QLC+ styled string
+     * @param maxTime Maximum time, expressed as QLC+ styled string
+     * @return true if successful. False on error.
+     */
+    int random(QString minTime, QString maxTime);
+
+    /**
+     * Handle "random" command (int version)
+     *
+     * @param minTime Minimum time in milliseconds
+     * @param maxTime Maximum time in milliseconds
+     * @return true if successful. False on error.
+     */
+    int random(int minTime, int maxTime);
+
+protected slots:
+    /** Triggered when the script's execution pauses to await the starting of a function */
+    void slotWaitFunctionStarted(quint32 fid);
+
+    /** Triggered when the script's execution pauses to await the completion of a function */
+    void slotWaitFunctionStopped(quint32 fid);
+
+protected:
+    /** QThread reimplemented method */
+    void run() override;
+
+private:
+    /** Common code to check if script is running and if function exists */
+    Function* getFunctionIfRunning(quint32 fID) const;
+
+    /** ScriptRunner function operations enum to handle start/stop/wait commands */
+    enum FunctionOperation
+    {
+        START = 0,
+        START_DONT_STOP,
+        STOP,
+        WAIT_START,
+        WAIT_STOP
+    };
+
+    /** Common code to enqueue function */
+    bool enqueueFunction(quint32 fID, FunctionOperation operation);
+
+    /**
+     * Packs a (universe, fixture, channel) triple into the 64 bit key used by
+     * m_fixtureValueQueue: 16 bits for the universe, 24 for the fixture ID and
+     * 24 for the channel.
+     */
+    static quint64 fixtureValueKey(quint32 universe, quint32 fixtureID, quint32 channel);
+
+    /**
+     * Runs a JS garbage collection pass if GC_INTERVAL_MS have elapsed since
+     * the last one. Must be called from the script thread, without holding
+     * m_mutex.
+     */
+    void maybeCollectGarbage();
+
+private:
+    Doc *m_doc;
+    QString m_content;
+
+    // Whether the script is running. It is read by the JS exported methods and
+    // write() (different threads) and written by execute()/stop()/run(), so it
+    // has to be atomic.
+    std::atomic<bool> m_running;
+
+    QJSEngine *m_engine;
+    // Queue holding the Function IDs to start/stop
+    QQueue<QPair<quint32, FunctionOperation>> m_functionQueue;
+    // Fixture values to send to Universes on the next write(). Keyed by
+    // (universe, fixture, channel) so a channel set several times between two
+    // ticks only keeps its latest value, instead of growing without bound.
+    QHash<quint64, FixtureValue> m_fixtureValueQueue;
+    // Indicate to add (true) or to not add (false) to the Functions started by this script
+    bool m_stopOnExit;
+    // IDs of the Functions started by this script. A set, so starting the same
+    // Function repeatedly does not accumulate duplicate entries.
+    QSet<quint32> m_startedFunctions;
+    // Timer ticks to wait before executing the next line
+    quint32 m_waitCount;
+    // Condition variable used by waitTime() to sleep until write() (on the
+    // MasterTimer thread) has counted m_waitCount down to zero. Used together
+    // with m_mutex.
+    QWaitCondition m_waitCondition;
+
+    // ID of the function that the script is waiting for
+    quint32 m_waitFunctionId;
+    // Map used to lookup a GenericFader instance for a Universe ID
+    QMap<quint32, QSharedPointer<GenericFader> > m_fadersMap;
+
+    // Time elapsed since the last garbage collection pass
+    QElapsedTimer m_gcTimer;
+
+    // Guards m_functionQueue, m_fixtureValueQueue, m_startedFunctions,
+    // m_waitCount, m_waitFunctionId and m_fadersMap (m_running is atomic).
+    // They are touched by the script thread (the JS exported methods), by
+    // write() on the MasterTimer thread, and by slotWaitFunctionStarted/Stopped
+    // on the thread this object lives in.
+    // Never call into Functions or Universes with it held. The JS engine is
+    // only touched under it to interrupt or delete it (see stop()/run()).
+    mutable QMutex m_mutex;
+};
+
+#endif

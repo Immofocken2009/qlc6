@@ -1,0 +1,59 @@
+/*
+  Q Light Controller Plus - Test Unit
+  showrunner_test.h
+
+  Copyright (c) Massimo Callegari
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0.txt
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+*/
+
+#ifndef SHOWRUNNER_TEST_H
+#define SHOWRUNNER_TEST_H
+
+#include <QObject>
+
+class Doc;
+class Show;
+class Track;
+class Scene;
+class Fixture;
+
+class ShowRunner_Test final : public QObject
+{
+    Q_OBJECT
+
+private slots:
+    void initTestCase();
+    void cleanupTestCase();
+    void initRunner();
+    void intensity();
+    void stopRunner();
+    void sameFunctionConsecutiveItems();
+    void sameFunctionOverlappingItems();
+    void differentFunctionsConsecutiveItems();
+    void beatItemsWhenStartingMidway();
+
+private:
+    Scene *createScene();
+    Show *createShow(quint32 fid1, quint32 start1, quint32 fid2, quint32 start2, bool sameTrack);
+    int runningTicks(Show *show, Scene *scene, quint32 from, quint32 to, quint32 until);
+
+private:
+    Doc *m_doc;
+    Fixture *m_fixture;
+    Show *m_show;
+    Track *m_track;
+    Scene *m_scene;
+};
+
+#endif
