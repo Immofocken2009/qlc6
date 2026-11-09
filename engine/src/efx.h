@@ -147,6 +147,9 @@ public:
     /** True when a usable effect definition is loaded */
     bool hasEffect() const;
 
+    /** True when the effect moves pan/tilt (formula channels or a path) */
+    bool hasPanTilt() const;
+
     /** Set a parameter by id; the value is clamped to the effect's limits */
     void setEffectParam(const QString& id, double value);
 
@@ -221,6 +224,21 @@ public:
      */
     void calculatePoint(Function::Direction direction, int startOffset, float iterator, float *x, float *y,
                         int fixtureIndex = 0, int fixtureCount = 1, int head = 0) const;
+
+    /**
+     * Cycle angle (0..2*pi) a fixture is at, after applying the playback
+     * direction, the fixture's start offset and the EFX start offset.
+     */
+    float effectiveAngle(Function::Direction direction, int startOffset, float iterator) const;
+
+    /**
+     * Evaluate every channel of the effect for one fixture/head.
+     * @param values receives one value per effect channel (effect->channels() order)
+     * @return the effect the values belong to (null if there is none)
+     */
+    EFXEffectPtr calculateChannelValues(Function::Direction direction, int startOffset, float iterator,
+                                        int fixtureIndex, int fixtureCount, int head,
+                                        QVector<double> *values) const;
 
 private:
 

@@ -220,6 +220,12 @@ bool EFX::hasEffect() const
     return !m_effect.isNull();
 }
 
+bool EFX::hasPanTilt() const
+{
+    QMutexLocker locker(&m_effectMutex);
+    return !m_effect.isNull() && m_effect->hasPanTilt();
+}
+
 void EFX::setEffectParam(const QString& id, double value)
 {
     {
@@ -393,13 +399,41 @@ void EFX::preview(QPolygonF &polygon, Function::Direction direction, int startOf
 void EFX::calculatePoint(Function::Direction direction, int startOffset, float iterator, float *x, float *y,
                          int fixtureIndex, int fixtureCount, int head) const
 {
+    calculatePoint(effectiveAngle(direction, startOffset, iterator), x, y, fixtureIndex, fixtureCount, head);
+}
+
+float EFX::effectiveAngle(Function::Direction direction, int startOffset, float iterator) const
+{
     iterator = calculateDirection(direction, iterator);
     iterator += convertOffset(startOffset + getAttributeValue(StartOffset));
 
     if (iterator >= M_PI * 2.0)
         iterator -= M_PI * 2.0;
 
-    calculatePoint(iterator, x, y, fixtureIndex, fixtureCount, head);
+    return iterator;
+}
+
+EFXEffectPtr EFX::calculateChannelValues(Function::Direction direction, int startOffset, float iterator,
+                                         int fixtureIndex, int fixtureCount, int head,
+                                         QVector<double> *values) const
+{
+    EFXEffectPtr fx;
+    QVector<double> params;
+    {
+        QMutexLocker locker(&m_effectMutex);
+        fx = m_effect;
+        params = m_paramVector;
+    }
+
+    if (fx.isNull())
+        return fx;
+
+    const double t = double(effectiveAngle(direction, startOffset, iterator)) / (M_PI * 2.0);
+    const int count = fx->channels().size();
+    values->resize(count);
+    for (int i = 0; i < count; i++)
+        (*values)[i] = fx->evaluateChannel(i, t, fixtureIndex, fixtureCount, head, params);
+    return fx;
 }
 
 void EFX::rotateAndScale(float *x, float *y) const

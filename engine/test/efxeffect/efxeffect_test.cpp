@@ -339,7 +339,7 @@ void EFXEffect_Test::libraryRejectsBadIds()
 void EFXEffect_Test::libraryLoadsPresets()
 {
     EFXLibrary lib;
-    QCOMPARE(lib.load(QDir(EFX_PRESET_DIR), false), 12);
+    QCOMPARE(lib.load(QDir(EFX_PRESET_DIR), false), 13);
     QVERIFY2(lib.loadErrors().isEmpty(), qPrintable(lib.loadErrors().join("\n")));
 
     // a system effect cannot be removed
@@ -584,7 +584,7 @@ void EFXEffect_Test::pathEffect()
 void EFXEffect_Test::legacyParity()
 {
     EFXLibrary lib;
-    QCOMPARE(lib.load(QDir(EFX_PRESET_DIR), false), 12);
+    QCOMPARE(lib.load(QDir(EFX_PRESET_DIR), false), 13);
 
     QMap<QString, QString> ids;
     ids["Circle"] = "circle";

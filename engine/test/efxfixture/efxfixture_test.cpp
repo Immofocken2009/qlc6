@@ -527,6 +527,160 @@ void EFXFixture_Test::setPointLedBar()
 }
 
 
+static EFXEffectPtr testEffect(const QString& channels)
+{
+    QString err;
+    EFXEffectPtr fx = EFXEffect::fromJson(
+        QString("{\"id\":\"zz-test\",\"channels\":[%1]}").arg(channels).toUtf8(), &err);
+    if (fx.isNull())
+        qWarning() << "test effect rejected:" << err;
+    return fx;
+}
+
+static quint32 addTestFixture(Doc *doc, const QString& manufacturer, const QString& model,
+                              const QString& modeName, quint32 address)
+{
+    QLCFixtureDef* def = doc->fixtureDefCache()->fixtureDef(manufacturer, model);
+    if (def == NULL)
+        return Fixture::invalidId();
+    QLCFixtureMode* mode = def->mode(modeName);
+    if (mode == NULL)
+        return Fixture::invalidId();
+
+    Fixture* fxi = new Fixture(doc);
+    fxi->setFixtureDefinition(def, mode);
+    fxi->setAddress(address);
+    doc->addFixture(fxi);
+    return fxi->id();
+}
+
+void EFXFixture_Test::effectChannelsColour()
+{
+    const quint32 id = addTestFixture(m_doc, "Generic", "Generic RGB", "RGB", 400);
+    QVERIFY(id != Fixture::invalidId());
+
+    QList<Universe*> ua = m_doc->inputOutputMap()->universes();
+    Universe *universe = ua[0];
+    QSharedPointer<GenericFader> fader = universe->requestFader();
+
+    EFX e(m_doc);
+    e.setDuration(1000);
+    EFXEffectPtr fx = testEffect("{\"target\":\"red\",\"expr\":\"0.5\"},{\"target\":\"green\",\"expr\":\"0\"},"
+                                 "{\"target\":\"blue\",\"expr\":\"2\"}"); // 2 is clamped to 1
+    QVERIFY(!fx.isNull());
+    e.setEffect(fx);
+
+    EFXFixture* ef = new EFXFixture(&e);
+    ef->setHead(GroupHead(id, 0));
+    e.addFixture(ef);
+
+    // a colour effect keeps a fixture valid that has neither pan nor tilt, even in Position mode
+    ef->setMode(EFXFixture::PanTilt);
+    QVERIFY(ef->isValid());
+    EFX plain(m_doc);
+    EFXFixture pf(&plain);
+    pf.setHead(GroupHead(id, 0));
+    pf.setMode(EFXFixture::PanTilt);
+    QVERIFY(!pf.isValid()); // default circle: nothing to drive on an RGB lamp in Position mode
+
+    ef->start(fader);
+    ef->setPointChannels(ua, fader);
+    QCOMPARE(fader->channels().count(), 3);
+    universe->processFaders(MasterTimer::tick());
+
+    QCOMPARE(uchar(universe->preGMValues()[400]), uchar(127));
+    QCOMPARE(uchar(universe->preGMValues()[401]), uchar(0));
+    QCOMPARE(uchar(universe->preGMValues()[402]), uchar(255));
+}
+
+void EFXFixture_Test::effectChannelsNoMovement()
+{
+    QList<Universe*> ua = m_doc->inputOutputMap()->universes();
+    Universe *universe = ua[0];
+    QSharedPointer<GenericFader> fader = universe->requestFader();
+
+    EFX e(m_doc);
+    e.setDuration(1000);
+    // a raw channel offset: DJScan250 channel 2, no pan/tilt in the effect
+    EFXEffectPtr fx = testEffect("{\"target\":{\"channel\":2},\"expr\":\"1\"}");
+    QVERIFY(!fx.isNull());
+    e.setEffect(fx);
+    QVERIFY(!e.hasPanTilt());
+
+    EFXFixture* ef = new EFXFixture(&e);
+    ef->setHead(GroupHead(m_fixture8bit, 0));
+    e.addFixture(ef);
+    ef->setSerialNumber(0);
+
+    // faders of earlier tests may still hold pan/tilt targets: settle them first
+    universe->processFaders(MasterTimer::tick());
+    const uchar panBefore = uchar(universe->preGMValues()[m_fixture8bitAddress + 0]);
+    const uchar tiltBefore = uchar(universe->preGMValues()[m_fixture8bitAddress + 1]);
+
+    ef->nextStep(ua, fader);
+    // only the raw channel is written, the head is not sent to the centre
+    QCOMPARE(fader->channels().count(), 1);
+    universe->processFaders(MasterTimer::tick());
+
+    QCOMPARE(uchar(universe->preGMValues()[m_fixture8bitAddress + 0]), panBefore);
+    QCOMPARE(uchar(universe->preGMValues()[m_fixture8bitAddress + 1]), tiltBefore);
+    QCOMPARE(uchar(universe->preGMValues()[m_fixture8bitAddress + 2]), uchar(255));
+}
+
+void EFXFixture_Test::effectChannels16bit()
+{
+    const quint32 id = addTestFixture(m_doc, "Acme", "Ginamp", "6 Channel", 420);
+    QVERIFY(id != Fixture::invalidId());
+
+    QList<Universe*> ua = m_doc->inputOutputMap()->universes();
+    Universe *universe = ua[0];
+    QSharedPointer<GenericFader> fader = universe->requestFader();
+
+    EFX e(m_doc);
+    e.setDuration(1000);
+    EFXEffectPtr fx = testEffect("{\"target\":\"dimmer\",\"expr\":\"0.5\"},{\"target\":\"white\",\"expr\":\"1\"}");
+    QVERIFY(!fx.isNull());
+    e.setEffect(fx);
+
+    EFXFixture* ef = new EFXFixture(&e);
+    ef->setHead(GroupHead(id, 0));
+    e.addFixture(ef);
+
+    ef->start(fader);
+    ef->setPointChannels(ua, fader);
+    universe->processFaders(MasterTimer::tick());
+
+    QCOMPARE(uchar(universe->preGMValues()[420 + 3]), uchar(255)); // white
+    QCOMPARE(uchar(universe->preGMValues()[420 + 4]), uchar(127)); // dimmer MSB (0.5 * 255)
+    QCOMPARE(uchar(universe->preGMValues()[420 + 5]), uchar(127)); // dimmer LSB
+}
+
+void EFXFixture_Test::effectChannelsMissingTargets()
+{
+    QList<Universe*> ua = m_doc->inputOutputMap()->universes();
+    Universe *universe = ua[0];
+    QSharedPointer<GenericFader> fader = universe->requestFader();
+
+    EFX e(m_doc);
+    e.setDuration(1000);
+    // the fixture has none of these: gobo, zoom, raw channel beyond its channel count
+    EFXEffectPtr fx = testEffect("{\"target\":\"gobo\",\"expr\":\"1\"},{\"target\":\"zoom\",\"expr\":\"1\"},"
+                                 "{\"target\":{\"channel\":400},\"expr\":\"1\"},{\"target\":\"bogus\",\"expr\":\"1\"}");
+    QVERIFY(!fx.isNull());
+    e.setEffect(fx);
+
+    const quint32 id = addTestFixture(m_doc, "Generic", "Generic RGB", "RGB", 440);
+    QVERIFY(id != Fixture::invalidId());
+    EFXFixture* ef = new EFXFixture(&e);
+    ef->setHead(GroupHead(id, 0));
+    e.addFixture(ef);
+
+    ef->start(fader);
+    QVERIFY(ef->m_bindings.isEmpty());
+    ef->setPointChannels(ua, fader); // must not write or crash
+    QCOMPARE(fader->channels().count(), 0);
+}
+
 void EFXFixture_Test::nextStepLoop()
 {
     QList<Universe*> ua = m_doc->inputOutputMap()->universes();

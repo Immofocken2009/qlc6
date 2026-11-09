@@ -52,6 +52,10 @@ private slots:
     void setPoint16bit();
     void setPointPanOnly();
     void setPointLedBar();
+    void effectChannelsColour();
+    void effectChannelsNoMovement();
+    void effectChannels16bit();
+    void effectChannelsMissingTargets();
 
     void nextStepLoop();
     void nextStepLoopZeroDuration();
