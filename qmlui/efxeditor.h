@@ -23,6 +23,7 @@
 #include "functioneditor.h"
 #include "treemodel.h"
 #include "efxeffect.h"
+#include "simulationclient.h"
 
 class Doc;
 class EFX;
@@ -61,6 +62,15 @@ class EFXEditor final : public FunctionEditor
     Q_PROPERTY(bool pathEditing READ pathEditing NOTIFY pathEditingChanged)
     Q_PROPERTY(QVariantList pathPoints READ pathPoints NOTIFY pathPointsChanged)
     Q_PROPERTY(bool pathClosed READ pathClosed WRITE setPathClosed NOTIFY pathPointsChanged)
+
+    // Simulation API
+    Q_PROPERTY(QString simApiUrl READ simApiUrl WRITE setSimApiUrl NOTIFY simApiUrlChanged)
+    Q_PROPERTY(QString simApiToken READ simApiToken WRITE setSimApiToken NOTIFY simApiTokenChanged)
+    Q_PROPERTY(bool simBusy READ simBusy NOTIFY simBusyChanged)
+    Q_PROPERTY(QVariantList simScenarios READ simScenarios NOTIFY simScenariosChanged)
+    Q_PROPERTY(QVariantList simSpots READ simSpots NOTIFY simSpotsChanged)
+    Q_PROPERTY(QString simLastError READ simLastError NOTIFY simLastErrorChanged)
+    Q_PROPERTY(QString simLastStatus READ simLastStatus NOTIFY simLastStatusChanged)
 
 public:
     EFXEditor(QQuickView *view, Doc *doc, QObject *parent = 0);
@@ -302,6 +312,65 @@ private:
     QVariantList m_algorithmData;
     /** Start index and direction of each fixture of the EFX */
     QVariantList m_fixturesData;
+
+    /************************************************************************
+     * Simulation API integration
+     ************************************************************************/
+public:
+    QString simApiUrl() const;
+    void setSimApiUrl(const QString& url);
+    QString simApiToken() const;
+    void setSimApiToken(const QString& token);
+    bool simBusy() const;
+    QVariantList simScenarios() const;
+    QVariantList simSpots() const;
+    QString simLastError() const;
+    QString simLastStatus() const;
+
+    /** Test connection to the simulation server.  Result via simConnectionTested(). */
+    Q_INVOKABLE void simTestConnection();
+    /** Fetch scenario list.  Result via simScenariosChanged(). */
+    Q_INVOKABLE void simFetchScenarios();
+    /** Fetch spots for @a scenarioId.  Result via simSpotsChanged(). */
+    Q_INVOKABLE void simFetchSpots(int scenarioId);
+    /**
+     * Send @a request to the simulation and import the result as user effects.
+     * @param request QVariantMap with keys hall_id, fixtures ([{spot_id, qlc_fixture_id}]),
+     *                movements ([{t,x,y}]), coord_system.
+     * Result: emits simImportDone(importedCount, errorCount).
+     */
+    Q_INVOKABLE void simCalculateAndImport(const QVariantMap& request);
+
+    /** Save API URL and token to QSettings */
+    Q_INVOKABLE void simSaveSettings();
+
+signals:
+    void simApiUrlChanged();
+    void simApiTokenChanged();
+    void simBusyChanged();
+    void simScenariosChanged();
+    void simSpotsChanged();
+    void simLastErrorChanged();
+    void simLastStatusChanged();
+
+    /** Emitted when testConnection() completes. */
+    void simConnectionTested(bool ok, const QString& message);
+    /** Emitted after calculateAndImport() – how many effects were imported / failed. */
+    void simImportDone(int imported, int failed);
+
+private:
+    void onSimConnectionTested(bool ok, const QString& msg, const QJsonObject& info);
+    void onSimScenariosFetched(const QJsonArray& arr);
+    void onSimSpotsFetched(int scenarioId, const QJsonObject& obj);
+    void onSimPanTiltCalculated(const QJsonObject& response);
+    void onSimRequestFailed(const QString& op, const QString& err);
+
+private:
+    SimulationClient *m_simClient;
+    QVariantList m_simScenarios;
+    QVariantList m_simSpots;
+    QString m_simLastError;
+    QString m_simLastStatus;
 };
 
 #endif // EFXEDITOR_H

@@ -1065,6 +1065,142 @@ Rectangle
                             }
                     }
 
+                    SectionBox
+                    {
+                        id: simulationSection
+                        width: editorColumn.colWidth - 5
+                        sectionLabel: qsTr("Simulation API")
+                        sectionContents:
+                            ColumnLayout
+                            {
+                                width: parent.width
+                                spacing: 4
+
+                                // URL row
+                                RowLayout
+                                {
+                                    Layout.fillWidth: true
+                                    spacing: 4
+
+                                    RobotoText { label: qsTr("URL") }
+                                    TextField
+                                    {
+                                        id: simUrlField
+                                        Layout.fillWidth: true
+                                        placeholderText: "http://localhost:5000"
+                                        text: efxEditor.simApiUrl
+                                        onEditingFinished: efxEditor.simApiUrl = text
+                                    }
+                                }
+
+                                // Token row
+                                RowLayout
+                                {
+                                    Layout.fillWidth: true
+                                    spacing: 4
+
+                                    RobotoText { label: qsTr("Token") }
+                                    TextField
+                                    {
+                                        id: simTokenField
+                                        Layout.fillWidth: true
+                                        echoMode: TextInput.Password
+                                        placeholderText: qsTr("Bearer token (optional)")
+                                        text: efxEditor.simApiToken
+                                        onEditingFinished: efxEditor.simApiToken = text
+                                    }
+                                }
+
+                                // Connection test + save buttons
+                                RowLayout
+                                {
+                                    Layout.fillWidth: true
+                                    spacing: 4
+
+                                    GenericButton
+                                    {
+                                        Layout.fillWidth: true
+                                        height: editorColumn.itemsHeight
+                                        label: qsTr("Test Connection")
+                                        enabled: !efxEditor.simBusy && simUrlField.text.length > 0
+                                        onClicked:
+                                        {
+                                            efxEditor.simApiUrl   = simUrlField.text
+                                            efxEditor.simApiToken = simTokenField.text
+                                            efxEditor.simTestConnection()
+                                        }
+                                    }
+                                    GenericButton
+                                    {
+                                        Layout.fillWidth: true
+                                        height: editorColumn.itemsHeight
+                                        label: qsTr("Save Settings")
+                                        onClicked:
+                                        {
+                                            efxEditor.simApiUrl   = simUrlField.text
+                                            efxEditor.simApiToken = simTokenField.text
+                                            efxEditor.simSaveSettings()
+                                        }
+                                    }
+                                }
+
+                                // Status line
+                                RobotoText
+                                {
+                                    Layout.fillWidth: true
+                                    label: efxEditor.simLastStatus
+                                    labelColor: efxEditor.simLastError.length > 0 ? "tomato" : UISettings.fgMedium
+                                    visible: efxEditor.simLastStatus.length > 0
+                                    wrapText: true
+                                }
+
+                                // Scenario selector
+                                RowLayout
+                                {
+                                    Layout.fillWidth: true
+                                    spacing: 4
+
+                                    ComboBox
+                                    {
+                                        id: simScenarioCombo
+                                        Layout.fillWidth: true
+                                        model: efxEditor.simScenarios
+                                        textRole: "name"
+                                        enabled: !efxEditor.simBusy
+                                        onCurrentIndexChanged:
+                                        {
+                                            if (currentIndex >= 0 && efxEditor.simScenarios.length > 0)
+                                            {
+                                                var sc = efxEditor.simScenarios[currentIndex]
+                                                efxEditor.simFetchSpots(sc.id)
+                                            }
+                                        }
+                                    }
+                                    GenericButton
+                                    {
+                                        height: editorColumn.itemsHeight
+                                        label: qsTr("Load Scenarios")
+                                        enabled: !efxEditor.simBusy && simUrlField.text.length > 0
+                                        onClicked:
+                                        {
+                                            efxEditor.simApiUrl   = simUrlField.text
+                                            efxEditor.simApiToken = simTokenField.text
+                                            efxEditor.simFetchScenarios()
+                                        }
+                                    }
+                                }
+
+                                // Busy indicator
+                                BusyIndicator
+                                {
+                                    Layout.alignment: Qt.AlignHCenter
+                                    running: efxEditor.simBusy
+                                    visible: running
+                                    width: 32; height: 32
+                                }
+                            }
+                    }
+
                 } // Column
                 ScrollBar.vertical: CustomScrollBar { id: sbar }
             } // Flickable

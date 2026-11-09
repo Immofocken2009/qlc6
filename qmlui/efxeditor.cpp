@@ -22,6 +22,7 @@
 #include <QDebug>
 #include <QQmlEngine>
 #include <QRandomGenerator>
+#include <QJsonDocument>
 
 #include "qlcfixturemode.h"
 #include "fixturemanager.h"
@@ -33,6 +34,7 @@
 #include "efx.h"
 #include "doc.h"
 #include "app.h"
+#include "simtoefxconverter.h"
 
 EFXEditor::EFXEditor(QQuickView *view, Doc *doc, QObject *parent)
     : FunctionEditor(view, doc, parent)
@@ -43,8 +45,24 @@ EFXEditor::EFXEditor(QQuickView *view, Doc *doc, QObject *parent)
     , m_pathEditing(false)
     , m_draftClosed(true)
     , m_draftEasing(EFXPath::ConstantSpeed)
+    , m_simClient(new SimulationClient(this))
 {
     m_editorObjectName = "efxEditorRoot";
+
+    m_simClient->load();
+
+    connect(m_simClient, &SimulationClient::connectionTested,
+            this, &EFXEditor::onSimConnectionTested);
+    connect(m_simClient, &SimulationClient::scenariosFetched,
+            this, &EFXEditor::onSimScenariosFetched);
+    connect(m_simClient, &SimulationClient::spotsFetched,
+            this, &EFXEditor::onSimSpotsFetched);
+    connect(m_simClient, &SimulationClient::panTiltCalculated,
+            this, &EFXEditor::onSimPanTiltCalculated);
+    connect(m_simClient, &SimulationClient::requestFailed,
+            this, &EFXEditor::onSimRequestFailed);
+    connect(m_simClient, &SimulationClient::busyChanged,
+            this, &EFXEditor::simBusyChanged);
 
     refreshEffectList();
     connect(EFXLibrary::instance(), &EFXLibrary::effectsChanged, this, [this]()
@@ -1159,4 +1177,163 @@ void EFXEditor::setPathStroke(const QVariantList &xy)
     m_draftPoints = pts;
     m_draftClosed = closed;
     applyPathDraft();
+}
+
+/*****************************************************************************
+ * Simulation API integration
+ *****************************************************************************/
+
+QString EFXEditor::simApiUrl() const
+{
+    return m_simClient->apiUrl();
+}
+
+void EFXEditor::setSimApiUrl(const QString& url)
+{
+    if (m_simClient->apiUrl() == url)
+        return;
+    m_simClient->setApiUrl(url);
+    emit simApiUrlChanged();
+}
+
+QString EFXEditor::simApiToken() const
+{
+    return m_simClient->apiToken();
+}
+
+void EFXEditor::setSimApiToken(const QString& token)
+{
+    if (m_simClient->apiToken() == token)
+        return;
+    m_simClient->setApiToken(token);
+    emit simApiTokenChanged();
+}
+
+bool EFXEditor::simBusy() const
+{
+    return m_simClient->busy();
+}
+
+QVariantList EFXEditor::simScenarios() const
+{
+    return m_simScenarios;
+}
+
+QVariantList EFXEditor::simSpots() const
+{
+    return m_simSpots;
+}
+
+QString EFXEditor::simLastError() const
+{
+    return m_simLastError;
+}
+
+QString EFXEditor::simLastStatus() const
+{
+    return m_simLastStatus;
+}
+
+void EFXEditor::simTestConnection()
+{
+    m_simClient->testConnection();
+}
+
+void EFXEditor::simFetchScenarios()
+{
+    m_simClient->fetchScenarios();
+}
+
+void EFXEditor::simFetchSpots(int scenarioId)
+{
+    m_simClient->fetchScenarioSpots(scenarioId);
+}
+
+void EFXEditor::simCalculateAndImport(const QVariantMap& request)
+{
+    QJsonObject reqObj = QJsonObject::fromVariantMap(request);
+    m_simClient->calculatePanTilt(reqObj);
+}
+
+void EFXEditor::simSaveSettings()
+{
+    m_simClient->save();
+}
+
+void EFXEditor::onSimConnectionTested(bool ok, const QString& msg, const QJsonObject& info)
+{
+    Q_UNUSED(info)
+    m_simLastStatus = ok ? tr("Connected") : tr("Connection failed");
+    m_simLastError  = ok ? QString() : msg;
+    emit simLastStatusChanged();
+    emit simLastErrorChanged();
+    emit simConnectionTested(ok, msg);
+}
+
+void EFXEditor::onSimScenariosFetched(const QJsonArray& arr)
+{
+    m_simScenarios.clear();
+    for (const QJsonValue& v : arr)
+        m_simScenarios.append(v.toObject().toVariantMap());
+    m_simLastStatus = tr("%1 scenario(s) loaded").arg(arr.size());
+    m_simLastError.clear();
+    emit simScenariosChanged();
+    emit simLastStatusChanged();
+    emit simLastErrorChanged();
+}
+
+void EFXEditor::onSimSpotsFetched(int scenarioId, const QJsonObject& obj)
+{
+    Q_UNUSED(scenarioId)
+    m_simSpots.clear();
+    const QJsonArray spots = obj.value(QLatin1String("spots")).toArray();
+    for (const QJsonValue& v : spots)
+        m_simSpots.append(v.toObject().toVariantMap());
+    m_simLastStatus = tr("%1 spot(s) loaded").arg(spots.size());
+    m_simLastError.clear();
+    emit simSpotsChanged();
+    emit simLastStatusChanged();
+    emit simLastErrorChanged();
+}
+
+void EFXEditor::onSimPanTiltCalculated(const QJsonObject& response)
+{
+    const QVector<SimEfxResult> results = SimToEfxConverter::convert(response);
+
+    int imported = 0;
+    int failed   = 0;
+    for (const SimEfxResult& res : results)
+    {
+        if (!res.error.isEmpty())
+        {
+            qWarning() << "[SimAPI] convert error for" << res.qlcFixtureId << ":" << res.error;
+            ++failed;
+            continue;
+        }
+
+        QString err;
+        if (!EFXLibrary::instance()->addUserEffect(res.efxJson, &err))
+        {
+            qWarning() << "[SimAPI] addUserEffect failed for" << res.effectId << ":" << err;
+            ++failed;
+        }
+        else
+        {
+            ++imported;
+        }
+    }
+
+    m_simLastStatus = tr("Imported %1, failed %2").arg(imported).arg(failed);
+    m_simLastError  = failed > 0 ? tr("%1 fixture(s) could not be converted").arg(failed) : QString();
+    emit simLastStatusChanged();
+    emit simLastErrorChanged();
+    emit simImportDone(imported, failed);
+}
+
+void EFXEditor::onSimRequestFailed(const QString& op, const QString& err)
+{
+    m_simLastError  = err;
+    m_simLastStatus = tr("Request failed (%1)").arg(op);
+    emit simLastErrorChanged();
+    emit simLastStatusChanged();
 }
