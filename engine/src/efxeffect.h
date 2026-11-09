@@ -25,6 +25,7 @@
 #include <QList>
 
 #include "efxexpression.h"
+#include "efxpath.h"
 
 /** @addtogroup engine Engine
  * @{
@@ -42,14 +43,31 @@ struct EFXParam
     double step;
 };
 
-/** One output of an effect: a semantic target (pan, tilt, dimmer, red...) or a raw channel. */
+/** A keyframe of a channel track. @a ease shapes the interval that starts at this key. */
+struct EFXKey
+{
+    enum Ease { Linear, Smooth, Step };
+
+    double t;       // cycle position 0..1
+    double v;       // value
+    Ease ease;
+
+    EFXKey() : t(0), v(0), ease(Linear) { }
+};
+
+/**
+ * One output of an effect: a semantic target (pan, tilt, dimmer, red...) or a
+ * raw channel, driven either by an expression or by a keyframe track.
+ */
 struct EFXEffectChannel
 {
     QString target;     // semantic name, lower case; empty when rawChannel is used
     int rawChannel;     // fixture channel offset, -1 when target is used
-    EFXExpression expr;
+    EFXExpression expr; // used when keys is empty
+    QVector<EFXKey> keys;
 
     EFXEffectChannel() : rawChannel(-1) { }
+    bool isKeyframed() const { return !keys.isEmpty(); }
 };
 
 /**
@@ -106,6 +124,19 @@ public:
      */
     double reverseTheta(double theta, const QVector<double>& params) const;
 
+    /**
+     * Value of a keyframe track at cycle position @a t (wraps around). Before
+     * the first key the first value is held, after the last key the last one.
+     */
+    static double evaluateKeys(const QVector<EFXKey>& keys, double t);
+
+    /** True if the effect has a Bezier/polyline path that drives pan and tilt. */
+    bool hasPath() const { return m_path.isValid(); }
+    const EFXPath& path() const { return m_path; }
+
+    /** True if the effect produces pan and tilt (by path or by channels). */
+    bool hasPanTilt() const { return hasPath() || (m_panIndex >= 0 && m_tiltIndex >= 0); }
+
     /** Convenience: pan/tilt pair (both -1..1). Returns false if the effect has no pan or tilt. */
     bool evaluatePanTilt(double theta, double fixtureIndex, double fixtureCount, double head,
                          const QVector<double>& params, double *pan, double *tilt) const;
@@ -128,6 +159,7 @@ private:
     QByteArray m_json;
     QList<EFXParam> m_params;
     QList<EFXEffectChannel> m_channels;
+    EFXPath m_path;
     EFXExpression m_reverse;
     bool m_hasReverse;
     int m_panIndex;

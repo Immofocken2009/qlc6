@@ -2,9 +2,9 @@
 
 - [x] Phase 0  Baseline, design (EFX-JSON-DESIGN.md), legacy golden values
 - [x] Phase 1  Expression compiler, effect definition, library, 10 presets, parity tests
-- [ ] Phase 2  Rebuild the `EFX` core on EFXEffect (replace Algorithm enum, freq/phase fields,
+- [x] Phase 2  Rebuild the `EFX` core on EFXEffect (replace Algorithm enum, freq/phase fields,
                XML save/load with Effect/Params/Embedded, fix external callers)
-- [ ] Phase 3  Keyframe / Bezier paths and per-channel keyframe tracks
+- [x] Phase 3  Keyframe / Bezier paths and per-channel keyframe tracks
 - [ ] Phase 4  Arbitrary channels (dimmer, colour, gobo, raw) in EFXFixture
 - [ ] Phase 5  QML editor rewrite
 - [ ] Phase 6  Library hot reload (QFileSystemWatcher)

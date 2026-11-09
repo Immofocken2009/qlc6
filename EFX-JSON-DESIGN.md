@@ -72,8 +72,21 @@ round sign min max clamp mix mod smoothstep tri saw square pulse noise`.
 }
 ```
 
-`path` liefert pan/tilt. Zusätzlich sind Keyframe-Spuren pro Kanal möglich:
+`path` liefert pan/tilt (Wertebereich -1..1, Ausgabe wird geklemmt). Ein Effekt mit
+`path` darf keine `pan`/`tilt`-Kanäle definieren, wohl aber weitere Kanäle (dimmer, Farbe …).
+
+Pfad-Felder: `type` = `bezier` (Standard) oder `polyline`; `closed` (Standard `false`);
+`easing` = `linear` (konstante Geschwindigkeit, Standard) oder `segments` (jedes Segment gleich lang).
+`in`/`out` sind **absolute** Kontrollpunkte; fehlen sie, ist der Punkt eine Ecke.
+2..256 Punkte, alle Koordinaten innerhalb ±10.
+
+Zusätzlich sind Keyframe-Spuren pro Kanal möglich (statt `expr`, nicht beides):
 `{ "target": "dimmer", "keys": [ {"t":0,"v":1}, {"t":0.5,"v":0,"ease":"smooth"}, {"t":1,"v":1} ] }`
+
+`t` liegt in 0..1 und muss strikt steigen; `ease` (`linear`, `smooth`, `step`) formt das Intervall,
+das an diesem Key beginnt. Vor dem ersten Key gilt dessen Wert, nach dem letzten der letzte
+(`t` wird zyklisch umgebrochen, ein Key bei exakt `t=1` wird daher nur angenähert).
+Max. 1024 Keys pro Spur.
 
 ## Beispiel 3 – Dimmer + Farbe pro Fixture (`rainbow-chase.json`)
 

@@ -26,6 +26,7 @@ add_library(${module_name} ${QLC_LIB_TYPE}
     efxexpression.cpp efxexpression.h
     efxfixture.cpp efxfixture.h
     efxlibrary.cpp efxlibrary.h
+    efxpath.cpp efxpath.h
     fadechannel.cpp fadechannel.h
     fixture.cpp fixture.h
     fixturegroup.cpp fixturegroup.h

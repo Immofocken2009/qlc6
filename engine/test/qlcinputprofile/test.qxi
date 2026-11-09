@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE InputProfile>
+<InputProfile xmlns="http://www.qlcplus.org/InputProfile">
+ <Creator>
+  <Name>Q Light Controller Plus</Name>
+  <Version>5.4.0 GIT</Version>
+  <Author>root</Author>
+ </Creator>
+ <Manufacturer>TestManufacturer</Manufacturer>
+ <Model>TestModel</Model>
+ <Type>MIDI</Type>
+ <Channel Number="0">
+  <Name>Channel 1</Name>
+  <Type>Button</Type>
+ </Channel>
+ <Channel Number="2">
+  <Name>Channel 3</Name>
+  <Type>Button</Type>
+ </Channel>
+ <Channel Number="5">
+  <Name>Channel 2</Name>
+  <Type>Button</Type>
+ </Channel>
+</InputProfile>

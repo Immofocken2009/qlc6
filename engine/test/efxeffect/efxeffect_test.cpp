@@ -244,9 +244,9 @@ void EFXEffect_Test::effectInvalid()
     QVERIFY(err.contains("foo"));
     QVERIFY(EFXEffect::fromJson("{\"id\":\"a\",\"channels\":[{\"expr\":\"0\"}]}", &err).isNull());
     QVERIFY(EFXEffect::fromJson("{\"id\":\"a\",\"channels\":[{\"target\":{\"channel\":9999},\"expr\":\"0\"}]}", &err).isNull());
-    // not implemented yet must fail loudly instead of silently doing nothing
+    // an empty path is rejected with a clear message
     QVERIFY(EFXEffect::fromJson("{\"id\":\"a\",\"path\":{},\"channels\":[{\"target\":\"pan\",\"expr\":\"0\"}]}", &err).isNull());
-    QVERIFY(err.contains("not supported"));
+    QVERIFY(err.contains("path"));
 }
 
 void EFXEffect_Test::effectParams()
@@ -339,7 +339,7 @@ void EFXEffect_Test::libraryRejectsBadIds()
 void EFXEffect_Test::libraryLoadsPresets()
 {
     EFXLibrary lib;
-    QCOMPARE(lib.load(QDir(EFX_PRESET_DIR), false), 10);
+    QCOMPARE(lib.load(QDir(EFX_PRESET_DIR), false), 12);
     QVERIFY2(lib.loadErrors().isEmpty(), qPrintable(lib.loadErrors().join("\n")));
 
     // a system effect cannot be removed
@@ -358,10 +358,233 @@ void EFXEffect_Test::libraryLoadsPresets()
 /* The old EFX algorithms were captured to a CSV before the enum was removed.
  * This reproduces the old pipeline (direction, start offset, rotate and scale)
  * around the JSON presets and compares every sample. */
+static QByteArray keyEffect(const QString& channels, const QString& extra = QString())
+{
+    return QString("{\"id\":\"k\",%1\"channels\":[%2]}").arg(extra, channels).toUtf8();
+}
+
+void EFXEffect_Test::keyframes()
+{
+    QString err;
+    EFXEffectPtr fx = EFXEffect::fromJson(keyEffect(
+        "{\"target\":\"dimmer\",\"keys\":[{\"t\":0.25,\"v\":0},{\"t\":0.5,\"v\":1,\"ease\":\"smooth\"},"
+        "{\"t\":0.75,\"v\":0.5,\"ease\":\"step\"},{\"t\":1,\"v\":0}]}"), &err);
+    QVERIFY2(!fx.isNull(), qPrintable(err));
+    QVERIFY(fx->channels().at(0).isKeyframed());
+
+    const QVector<double> p;
+    auto v = [&](double t) { return fx->evaluateChannel(0, t, 0, 1, 0, p); };
+    QVERIFY(near(v(0.0), 0.0));      // held before the first key
+    QVERIFY(near(v(0.25), 0.0));
+    QVERIFY(near(v(0.375), 0.5));    // linear midpoint
+    QVERIFY(near(v(0.5), 1.0));
+    QVERIFY(near(v(0.625), 0.75));   // smoothstep midpoint = linear midpoint
+    QVERIFY(v(0.5625) > 0.85 && v(0.5625) < 0.95); // smoothstep(0.25) = 0.156 -> eases away from the key
+    QVERIFY(near(v(0.75), 0.5));
+    QVERIFY(near(v(0.9), 0.5));      // step holds the key value for the whole interval
+    QVERIFY(near(v(0.9999), 0.5));
+    QVERIFY(near(v(1.0), v(0.0)));   // t wraps
+    QVERIFY(near(v(1.375), v(0.375)));
+    QVERIFY(near(v(-0.625), v(0.375)));
+
+    // a single key is a constant
+    EFXEffectPtr one = EFXEffect::fromJson(keyEffect("{\"target\":\"dimmer\",\"keys\":[{\"t\":0.3,\"v\":0.7}]}"), &err);
+    QVERIFY2(!one.isNull(), qPrintable(err));
+    QVERIFY(near(one->evaluateChannel(0, 0.9, 0, 1, 0, p), 0.7));
+}
+
+void EFXEffect_Test::keyframesRejectBad()
+{
+    QString err;
+    const QStringList bad = QStringList()
+        << "{\"target\":\"dimmer\",\"keys\":[]}"
+        << "{\"target\":\"dimmer\",\"keys\":{}}"
+        << "{\"target\":\"dimmer\",\"keys\":[{\"t\":0.5,\"v\":0},{\"t\":0.5,\"v\":1}]}"      // not increasing
+        << "{\"target\":\"dimmer\",\"keys\":[{\"t\":0.6,\"v\":0},{\"t\":0.5,\"v\":1}]}"      // decreasing
+        << "{\"target\":\"dimmer\",\"keys\":[{\"t\":-0.1,\"v\":0}]}"
+        << "{\"target\":\"dimmer\",\"keys\":[{\"t\":1.1,\"v\":0}]}"
+        << "{\"target\":\"dimmer\",\"keys\":[{\"t\":\"x\",\"v\":0}]}"
+        << "{\"target\":\"dimmer\",\"keys\":[{\"t\":0.1}]}"
+        << "{\"target\":\"dimmer\",\"keys\":[{\"t\":0.1,\"v\":0,\"ease\":\"bounce\"}]}"
+        << "{\"target\":\"dimmer\",\"expr\":\"1\",\"keys\":[{\"t\":0.1,\"v\":0}]}";          // both
+    for (const QString& ch : bad)
+        QVERIFY2(EFXEffect::fromJson(keyEffect(ch), &err).isNull(), qPrintable(ch));
+
+    // too many keys
+    QStringList keys;
+    for (int i = 0; i < 1025; i++)
+        keys << QString("{\"t\":%1,\"v\":0}").arg(double(i) / 2000.0);
+    QVERIFY(EFXEffect::fromJson(keyEffect("{\"target\":\"dimmer\",\"keys\":[" + keys.join(",") + "]}"), &err).isNull());
+}
+
+static EFXPath circlePath(EFXPath::Easing easing)
+{
+    const double k = 0.5522847498;
+    QVector<EFXPathPoint> pts;
+    auto add = [&](double x, double y, double inx, double iny, double outx, double outy)
+    {
+        EFXPathPoint p;
+        p.pos = QPointF(x, y);
+        p.in = QPointF(inx, iny);
+        p.out = QPointF(outx, outy);
+        pts << p;
+    };
+    add(0, -1, -k, -1, k, -1);
+    add(1, 0, 1, -k, 1, k);
+    add(0, 1, k, 1, -k, 1);
+    add(-1, 0, -1, k, -1, -k);
+    EFXPath path;
+    QString err;
+    path.setPoints(pts, true, true, easing, &err);
+    return path;
+}
+
+void EFXEffect_Test::pathCircle()
+{
+    const EFXPath path = circlePath(EFXPath::ConstantSpeed);
+    QVERIFY(path.isValid());
+    QVERIFY(std::fabs(path.length() - 2 * M_PI) < 0.01);
+
+    // starts at the first anchor, quarter turns land on the anchors, and every sample is on the unit circle
+    QVERIFY(std::fabs(path.evaluate(0).x()) < 1e-9 && std::fabs(path.evaluate(0).y() + 1) < 1e-9);
+    QVERIFY(std::fabs(path.evaluate(0.25).x() - 1) < 0.01 && std::fabs(path.evaluate(0.25).y()) < 0.01);
+    QVERIFY(std::fabs(path.evaluate(0.5).x()) < 0.01 && std::fabs(path.evaluate(0.5).y() - 1) < 0.01);
+    for (int i = 0; i < 400; i++)
+    {
+        const QPointF p = path.evaluate(i / 400.0);
+        QVERIFY(std::fabs(std::hypot(p.x(), p.y()) - 1) < 0.002);
+    }
+
+    // closed and wrapping
+    QVERIFY(std::fabs(path.evaluate(1.0).y() - path.evaluate(0.0).y()) < 1e-9);
+    QVERIFY(std::fabs(path.evaluate(1.25).x() - path.evaluate(0.25).x()) < 1e-9);
+    QVERIFY(std::fabs(path.evaluate(-0.75).x() - path.evaluate(0.25).x()) < 1e-9);
+}
+
+void EFXEffect_Test::pathEasing()
+{
+    // two segments of very different length
+    QVector<EFXPathPoint> pts;
+    for (double x : { -1.0, -0.8, 1.0 })
+    {
+        EFXPathPoint p;
+        p.pos = p.in = p.out = QPointF(x, 0);
+        pts << p;
+    }
+    EFXPath constant, segments;
+    QVERIFY(constant.setPoints(pts, false, false, EFXPath::ConstantSpeed));
+    QVERIFY(segments.setPoints(pts, false, false, EFXPath::EqualSegments));
+
+    // constant speed: x grows linearly with t; equal segments: half the time is spent on the short one
+    QVERIFY(std::fabs(constant.evaluate(0.5).x() - 0.0) < 1e-3);
+    QVERIFY(std::fabs(segments.evaluate(0.5).x() - (-0.8)) < 1e-3);
+    QVERIFY(std::fabs(segments.evaluate(0.25).x() - (-0.9)) < 1e-3);
+}
+
+void EFXEffect_Test::pathOpenAndPolyline()
+{
+    QString err;
+    EFXEffectPtr fx = EFXEffect::fromJson(
+        "{\"id\":\"p\",\"path\":{\"type\":\"polyline\",\"points\":[{\"x\":-1,\"y\":-1},{\"x\":1,\"y\":1}]}}", &err);
+    QVERIFY2(!fx.isNull(), qPrintable(err));
+    QVERIFY(fx->hasPath());
+    QVERIFY(fx->hasPanTilt());
+    QVERIFY(!fx->path().isClosed());
+
+    // open path: t 0 -> first point, t -> 1 approaches the last point
+    double pan, tilt;
+    const QVector<double> p;
+    QVERIFY(fx->evaluatePanTilt(0, 0, 1, 0, p, &pan, &tilt));
+    QVERIFY(near(pan, -1) && near(tilt, -1));
+    QVERIFY(fx->evaluatePanTilt(M_PI, 0, 1, 0, p, &pan, &tilt));
+    QVERIFY(near(pan, 0) && near(tilt, 0));
+    QVERIFY(fx->evaluatePanTilt(2 * M_PI * 0.999, 0, 1, 0, p, &pan, &tilt));
+    QVERIFY(pan > 0.99 && tilt > 0.99);
+
+    // JSON round trip keeps the geometry
+    EFXPath copy;
+    QVERIFY(copy.fromJson(fx->path().toJson(), &err));
+    QCOMPARE(copy.points().size(), 2);
+    QCOMPARE(copy.isBezier(), false);
+    QVERIFY(near(copy.evaluate(0.5).x(), 0));
+
+    // values outside -1..1 are clamped
+    EFXPath wide;
+    QVector<EFXPathPoint> pts;
+    for (double x : { -3.0, 3.0 })
+    {
+        EFXPathPoint pt;
+        pt.pos = pt.in = pt.out = QPointF(x, 0);
+        pts << pt;
+    }
+    QVERIFY(wide.setPoints(pts, false, false, EFXPath::ConstantSpeed));
+    QVERIFY(near(wide.evaluate(0.01).x(), -1) && near(wide.evaluate(0.99).x(), 1));
+}
+
+void EFXEffect_Test::pathRejectBad()
+{
+    QString err;
+    const QStringList bad = QStringList()
+        << "{\"id\":\"p\",\"path\":{\"points\":[]}}"
+        << "{\"id\":\"p\",\"path\":{\"points\":[{\"x\":0,\"y\":0}]}}"                       // one point
+        << "{\"id\":\"p\",\"path\":{\"type\":\"spline\",\"points\":[{\"x\":0,\"y\":0},{\"x\":1,\"y\":1}]}}"
+        << "{\"id\":\"p\",\"path\":{\"easing\":\"wobble\",\"points\":[{\"x\":0,\"y\":0},{\"x\":1,\"y\":1}]}}"
+        << "{\"id\":\"p\",\"path\":{\"points\":[{\"x\":0},{\"x\":1,\"y\":1}]}}"
+        << "{\"id\":\"p\",\"path\":{\"points\":[{\"x\":\"a\",\"y\":0},{\"x\":1,\"y\":1}]}}"
+        << "{\"id\":\"p\",\"path\":{\"points\":[{\"x\":99,\"y\":0},{\"x\":1,\"y\":1}]}}"      // out of range
+        << "{\"id\":\"p\",\"path\":{\"points\":[{\"x\":0,\"y\":0,\"out\":[1]},{\"x\":1,\"y\":1}]}}"
+        << "{\"id\":\"p\",\"path\":{\"points\":[{\"x\":0,\"y\":0,\"in\":[0,99]},{\"x\":1,\"y\":1}]}}"
+        << "{\"id\":\"p\",\"path\":[]}"
+        << "{\"id\":\"p\"}"                                                                    // neither channels nor path
+        << "{\"id\":\"p\",\"path\":{\"points\":[{\"x\":0,\"y\":0},{\"x\":1,\"y\":1}]},"
+           "\"channels\":[{\"target\":\"pan\",\"expr\":\"0\"}]}";                                // path + pan
+    for (const QString& json : bad)
+        QVERIFY2(EFXEffect::fromJson(json.toUtf8(), &err).isNull(), qPrintable(json));
+
+    // too many points
+    QStringList pts;
+    for (int i = 0; i < EFXPath::MaxPoints + 1; i++)
+        pts << "{\"x\":0,\"y\":0}";
+    QVERIFY(EFXEffect::fromJson(("{\"id\":\"p\",\"path\":{\"points\":[" + pts.join(",") + "]}}").toUtf8(), &err).isNull());
+
+    // a path may be combined with non pan/tilt channels
+    QVERIFY(!EFXEffect::fromJson(
+        "{\"id\":\"p\",\"path\":{\"points\":[{\"x\":0,\"y\":0},{\"x\":1,\"y\":1}]},"
+        "\"channels\":[{\"target\":\"dimmer\",\"expr\":\"1\"}]}", &err).isNull());
+}
+
+void EFXEffect_Test::pathEffect()
+{
+    EFXLibrary lib;
+    QVERIFY(lib.load(QDir(EFX_PRESET_DIR), false) > 0);
+
+    EFXEffectPtr heart = lib.effect("heart");
+    QVERIFY(!heart.isNull());
+    QVERIFY(heart->hasPath());
+    QVERIFY(heart->path().isClosed());
+    QVERIFY(heart->channels().isEmpty());
+
+    // the heart's first anchor is the bottom tip
+    double pan, tilt;
+    QVERIFY(heart->evaluatePanTilt(0, 0, 1, 0, QVector<double>(), &pan, &tilt));
+    QVERIFY(near(pan, 0) && near(tilt, -1));
+
+    // reverse playback maps to the mirrored position of the same closed path
+    const double rev = heart->reverseTheta(M_PI / 2, QVector<double>());
+    QVERIFY(near(rev, 3 * M_PI / 2));
+
+    EFXEffectPtr breathing = lib.effect("breathing-spot");
+    QVERIFY(!breathing.isNull());
+    QVERIFY(breathing->hasPanTilt());
+    QCOMPARE(breathing->channels().size(), 1);
+    QVERIFY(near(breathing->evaluateChannel(0, 0.0, 0, 1, 0, QVector<double>()), 1.0));
+    QVERIFY(near(breathing->evaluateChannel(0, 0.5, 0, 1, 0, QVector<double>()), 0.1));
+}
+
 void EFXEffect_Test::legacyParity()
 {
     EFXLibrary lib;
-    QCOMPARE(lib.load(QDir(EFX_PRESET_DIR), false), 10);
+    QCOMPARE(lib.load(QDir(EFX_PRESET_DIR), false), 12);
 
     QMap<QString, QString> ids;
     ids["Circle"] = "circle";

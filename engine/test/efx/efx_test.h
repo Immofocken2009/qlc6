@@ -65,6 +65,7 @@ private slots:
     void effectParams();
     void effectEmbeddedFallback();
     void effectMissing();
+    void effectPath();
 
     void preRunPostRun();
     void adjustIntensity();

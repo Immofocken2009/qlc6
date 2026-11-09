@@ -42,6 +42,13 @@ private slots:
     void libraryRejectsBadIds();
     void libraryLoadsPresets();
 
+    void keyframes();
+    void keyframesRejectBad();
+    void pathCircle();
+    void pathEasing();
+    void pathOpenAndPolyline();
+    void pathRejectBad();
+    void pathEffect();
     void legacyParity();
 };
 

@@ -21,6 +21,7 @@
 #include <QJsonArray>
 #include <QJsonValue>
 #include <QtMath>
+#include <cmath>
 #include <QVarLengthArray>
 
 #include "efxeffect.h"
@@ -28,6 +29,7 @@
 #define MAX_PARAMS   64
 #define MAX_CHANNELS 64
 #define MAX_JSON     (1024 * 1024)
+#define MAX_KEYS     1024
 
 static const int BuiltinCount = 5; // t, theta, i, n, h
 
@@ -61,6 +63,47 @@ static bool isReservedName(const QString& name)
         << "round" << "sign" << "min" << "max" << "clamp" << "mix" << "mod"
         << "smoothstep" << "tri" << "saw" << "square" << "pulse" << "noise" << "if";
     return reserved.contains(name);
+}
+
+static bool parseKeys(const QJsonValue& value, QVector<EFXKey> *out, QString *error)
+{
+    if (!value.isArray())
+        return setError(error, QStringLiteral("'keys' must be an array"));
+
+    const QJsonArray arr = value.toArray();
+    if (arr.isEmpty())
+        return setError(error, QStringLiteral("'keys' is empty"));
+    if (arr.size() > MAX_KEYS)
+        return setError(error, QStringLiteral("too many keys (max %1)").arg(MAX_KEYS));
+
+    QVector<EFXKey> keys;
+    for (int i = 0; i < arr.size(); i++)
+    {
+        const QJsonObject ko = arr.at(i).toObject();
+        if (!ko.value("t").isDouble() || !ko.value("v").isDouble())
+            return setError(error, QStringLiteral("key %1: 't' and 'v' must be numbers").arg(i));
+
+        EFXKey k;
+        k.t = ko.value("t").toDouble();
+        k.v = ko.value("v").toDouble();
+        if (!std::isfinite(k.t) || !std::isfinite(k.v) || k.t < 0.0 || k.t > 1.0)
+            return setError(error, QStringLiteral("key %1: 't' must be within 0..1 and 'v' finite").arg(i));
+        if (!keys.isEmpty() && k.t <= keys.last().t)
+            return setError(error, QStringLiteral("key %1: 't' must be strictly increasing").arg(i));
+
+        const QString ease = ko.value("ease").toString("linear");
+        if (ease == "linear")
+            k.ease = EFXKey::Linear;
+        else if (ease == "smooth")
+            k.ease = EFXKey::Smooth;
+        else if (ease == "step")
+            k.ease = EFXKey::Step;
+        else
+            return setError(error, QStringLiteral("key %1: unknown ease '%2'").arg(i).arg(ease));
+        keys << k;
+    }
+    *out = keys;
+    return true;
 }
 
 QSharedPointer<EFXEffect> EFXEffect::fromJson(const QByteArray& json, QString *error)
@@ -151,17 +194,27 @@ QSharedPointer<EFXEffect> EFXEffect::fromJson(const QByteArray& json, QString *e
         fx->m_params << p;
     }
 
-    // Channels
-    if (root.contains("path") || root.contains("keys"))
+    // Path (drives pan and tilt)
+    if (root.contains("path"))
     {
-        setError(error, QStringLiteral("keyframe/path effects are not supported yet"));
-        return QSharedPointer<EFXEffect>();
+        if (!root.value("path").isObject())
+        {
+            setError(error, QStringLiteral("'path' must be an object"));
+            return QSharedPointer<EFXEffect>();
+        }
+        QString perr;
+        if (!fx->m_path.fromJson(root.value("path").toObject(), &perr))
+        {
+            setError(error, perr);
+            return QSharedPointer<EFXEffect>();
+        }
     }
 
+    // Channels
     QJsonArray channels = root.value("channels").toArray();
-    if (channels.isEmpty())
+    if (channels.isEmpty() && !fx->hasPath())
     {
-        setError(error, QStringLiteral("effect has no 'channels'"));
+        setError(error, QStringLiteral("effect has no 'channels' and no 'path'"));
         return QSharedPointer<EFXEffect>();
     }
     if (channels.size() > MAX_CHANNELS)
@@ -202,18 +255,30 @@ QSharedPointer<EFXEffect> EFXEffect::fromJson(const QByteArray& json, QString *e
             return QSharedPointer<EFXEffect>();
         }
 
+        const QString name = ch.target.isEmpty() ? QString::number(ch.rawChannel) : ch.target;
+
         if (co.contains("keys"))
         {
-            setError(error, QStringLiteral("keyframe tracks are not supported yet"));
-            return QSharedPointer<EFXEffect>();
+            if (co.contains("expr"))
+            {
+                setError(error, QStringLiteral("target '%1': use either 'expr' or 'keys', not both").arg(name));
+                return QSharedPointer<EFXEffect>();
+            }
+            QString kerr;
+            if (!parseKeys(co.value("keys"), &ch.keys, &kerr))
+            {
+                setError(error, QStringLiteral("target '%1': %2").arg(name, kerr));
+                return QSharedPointer<EFXEffect>();
+            }
         }
-
-        QString expr = co.value("expr").toString();
-        if (!ch.expr.compile(expr, vars))
+        else
         {
-            setError(error, QStringLiteral("target '%1': %2")
-                     .arg(ch.target.isEmpty() ? QString::number(ch.rawChannel) : ch.target, ch.expr.error()));
-            return QSharedPointer<EFXEffect>();
+            QString expr = co.value("expr").toString();
+            if (!ch.expr.compile(expr, vars))
+            {
+                setError(error, QStringLiteral("target '%1': %2").arg(name, ch.expr.error()));
+                return QSharedPointer<EFXEffect>();
+            }
         }
 
         fx->m_channels << ch;
@@ -221,6 +286,12 @@ QSharedPointer<EFXEffect> EFXEffect::fromJson(const QByteArray& json, QString *e
 
     fx->m_panIndex = fx->channelIndex("pan");
     fx->m_tiltIndex = fx->channelIndex("tilt");
+
+    if (fx->hasPath() && (fx->m_panIndex >= 0 || fx->m_tiltIndex >= 0))
+    {
+        setError(error, QStringLiteral("an effect with a 'path' cannot also define pan/tilt channels"));
+        return QSharedPointer<EFXEffect>();
+    }
 
     // Optional reverse mapping of theta
     if (root.contains("reverse"))
@@ -284,9 +355,41 @@ double EFXEffect::evaluateChannel(int channel, double t, double fixtureIndex, do
 {
     if (channel < 0 || channel >= m_channels.size())
         return 0.0;
+    const EFXEffectChannel& ch = m_channels.at(channel);
+    if (ch.isKeyframed())
+        return evaluateKeys(ch.keys, t);
+
     QVarLengthArray<double, BuiltinCount + 16> vars(BuiltinCount + m_params.size());
     fillVars(vars.data(), t, fixtureIndex, fixtureCount, head, params);
-    return m_channels.at(channel).expr.evaluate(vars.constData());
+    return ch.expr.evaluate(vars.constData());
+}
+
+double EFXEffect::evaluateKeys(const QVector<EFXKey>& keys, double t)
+{
+    if (keys.isEmpty() || !std::isfinite(t))
+        return 0.0;
+
+    t -= std::floor(t);
+
+    if (t <= keys.first().t)
+        return keys.first().v;
+    if (t >= keys.last().t)
+        return keys.last().v;
+
+    // first key with a greater t; the interval is [idx-1, idx]
+    int idx = 1;
+    while (keys.at(idx).t <= t)
+        idx++;
+    const EFXKey& a = keys.at(idx - 1);
+    const EFXKey& b = keys.at(idx);
+
+    if (a.ease == EFXKey::Step)
+        return a.v;
+
+    double f = (t - a.t) / (b.t - a.t);
+    if (a.ease == EFXKey::Smooth)
+        f = f * f * (3.0 - 2.0 * f);
+    return a.v + (b.v - a.v) * f;
 }
 
 double EFXEffect::reverseTheta(double theta, const QVector<double>& params) const
@@ -302,12 +405,25 @@ double EFXEffect::reverseTheta(double theta, const QVector<double>& params) cons
 bool EFXEffect::evaluatePanTilt(double theta, double fixtureIndex, double fixtureCount, double head,
                                 const QVector<double>& params, double *pan, double *tilt) const
 {
-    if (m_panIndex < 0 || m_tiltIndex < 0)
+    if (!hasPanTilt())
         return false;
+
+    const double t = theta / (2.0 * M_PI);
+    if (hasPath())
+    {
+        const QPointF p = m_path.evaluate(t);
+        *pan = p.x();
+        *tilt = p.y();
+        return true;
+    }
+
     QVarLengthArray<double, BuiltinCount + 16> vars(BuiltinCount + m_params.size());
-    fillVars(vars.data(), theta / (2.0 * M_PI), fixtureIndex, fixtureCount, head, params);
+    fillVars(vars.data(), t, fixtureIndex, fixtureCount, head, params);
     vars[1] = theta;
-    *pan = m_channels.at(m_panIndex).expr.evaluate(vars.constData());
-    *tilt = m_channels.at(m_tiltIndex).expr.evaluate(vars.constData());
+
+    const EFXEffectChannel& pc = m_channels.at(m_panIndex);
+    const EFXEffectChannel& tc = m_channels.at(m_tiltIndex);
+    *pan = pc.isKeyframed() ? evaluateKeys(pc.keys, t) : pc.expr.evaluate(vars.constData());
+    *tilt = tc.isKeyframed() ? evaluateKeys(tc.keys, t) : tc.expr.evaluate(vars.constData());
     return true;
 }

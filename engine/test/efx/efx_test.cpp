@@ -1579,6 +1579,36 @@ void EFX_Test::effectMissing()
     QCOMPARE(e2.effectId(), QString("nope"));
 }
 
+void EFX_Test::effectPath()
+{
+    // A Bezier path effect runs through the same pipeline as formula effects
+    EFX e(m_doc);
+    QVERIFY(e.setEffect("heart"));
+    QVERIFY(e.effect()->hasPath());
+
+    QPolygonF poly;
+    e.preview(poly);
+    QVERIFY(poly.size() > 10);
+    for (const QPointF& p : poly)
+    {
+        QVERIFY(p.x() >= 0 && p.x() <= 255);
+        QVERIFY(p.y() >= 0 && p.y() <= 255);
+    }
+
+    // starts at the heart's bottom tip: pan centred, tilt at the lower end (default 127 +/- 127)
+    float x = -1, y = -1;
+    e.calculatePoint(Function::Forward, 0, 0.0f, &x, &y);
+    QVERIFY(qAbs(x - 127.0f) < 1.0f);
+    QVERIFY(qAbs(y - 0.0f) < 1.0f);
+
+    // width scaling still applies engine-side
+    e.setWidth(0);
+    QPolygonF narrow;
+    e.preview(narrow);
+    QVERIFY(narrow.boundingRect().width() < 1.0);
+    QVERIFY(narrow.boundingRect().height() > 100.0);
+}
+
 void EFX_Test::preRunPostRun()
 {
     QList<Universe*> ua;
