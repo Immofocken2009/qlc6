@@ -22,6 +22,8 @@
 #define EFXFIXTURE_H
 
 #include <QImage>
+#include <QVector>
+#include "efxeffect.h"
 #include "function.h"
 #include "grouphead.h"
 
@@ -31,6 +33,7 @@ class EFXFixture;
 class Scene;
 class EFX;
 class Doc;
+class Fixture;
 class QImage;
 
 /** @addtogroup engine_functions Functions
@@ -203,6 +206,24 @@ private:
     void setPointDimmer(QList<Universe *> universes, QSharedPointer<GenericFader> fader, float dimmer);
     void setPointRGB (QList<Universe *> universes, QSharedPointer<GenericFader> fader, float x, float y);
 
+    /** A fixture channel driven by one channel of the effect */
+    struct ChannelBinding
+    {
+        int effectChannel;      // index in EFXEffect::channels()
+        quint32 msb;
+        quint32 lsb;            // QLCChannel::invalid() when the channel has no fine byte
+    };
+
+    /**
+     * Map the effect's non pan/tilt channels (dimmer, colours, gobo, raw ...)
+     * to channels of the given fixture head. Targets the fixture does not
+     * have are skipped.
+     */
+    static QVector<ChannelBinding> resolveBindings(const EFXEffectPtr& effect, const Fixture *fxi, int head);
+
+    /** Write the effect's non pan/tilt channel values (0..1) to the bound channels */
+    void setPointChannels(QList<Universe *> universes, QSharedPointer<GenericFader> fader);
+
     /** Write a dimmer value to the cached intensity channel (used when the EFX
         has dimmer control enabled, where m_firstMsbChannel/m_secondMsbChannel are
         already taken by pan/tilt) */
@@ -218,6 +239,11 @@ private:
         (pan/tilt use the channels above) */
     quint32 m_intensityMsbChannel;
     quint32 m_intensityLsbChannel;
+
+    /** Effect the bindings were resolved for; re-resolved when the effect changes */
+    EFXEffectPtr m_boundEffect;
+    QVector<ChannelBinding> m_bindings;
+    QVector<double> m_values;
 
 private:
     static QImage m_rgbGradient;

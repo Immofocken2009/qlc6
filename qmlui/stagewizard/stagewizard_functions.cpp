@@ -847,7 +847,7 @@ int StageWizard::efxSizeForDegrees(float degrees, float maxDeg) const
 }
 
 void StageWizard::generateMovementEffect(const FixtureGroupEntry &grp, const QString &prefix,
-                                         int algorithm, const QString &label,
+                                         const QString &effectId, const QString &label,
                                          MovementAnchor anchor)
 {
     if (!grp.hasMovement) return;
@@ -863,7 +863,8 @@ void StageWizard::generateMovementEffect(const FixtureGroupEntry &grp, const QSt
 
     EFX *efx = new EFX(m_doc);
     efx->setName(tr("%1 – %2 (motion)").arg(prefix).arg(label));
-    efx->setAlgorithm(static_cast<EFX::Algorithm>(algorithm));
+    if (!efx->setEffect(effectId))
+        qWarning() << "Stage wizard: effect" << effectId << "is missing from the effect library";
     // Relative: the pattern rides on top of each head's current (base-position)
     // aim, so heads move smoothly around the anchor.
     efx->setIsRelative(true);
@@ -910,10 +911,10 @@ void StageWizard::generateMovementEffect(const FixtureGroupEntry &grp, const QSt
 }
 
 void StageWizard::generateEFX(const FixtureGroupEntry &grp, const QString &prefix,
-                               int algorithm, const QString &label)
+                               const QString &effectId, const QString &label)
 {
     // Fly Out / Fly In: beams sweep up and down and fade as they "fly".
-    Q_UNUSED(algorithm)
+    Q_UNUSED(effectId)
     if (!grp.hasMovement) return;
 
     // ABSOLUTE, not relative: an absolute EFX writes pan on every tick, so it
@@ -958,7 +959,8 @@ void StageWizard::generateEFX(const FixtureGroupEntry &grp, const QString &prefi
 
     EFX *efx = new EFX(m_doc);
     efx->setName(tr("%1 – %2").arg(prefix).arg(label));
-    efx->setAlgorithm(EFX::Line);
+    if (!efx->setEffect(QStringLiteral("line")))
+        qWarning() << "Stage wizard: effect \"line\" is missing from the effect library";
     efx->setWidth(0);                                        // no pan swing: tilt only
     efx->setHeight(kFlyHeight);
     efx->setIsRelative(false);

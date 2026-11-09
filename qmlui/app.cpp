@@ -43,6 +43,7 @@
 #include <unistd.h>
 
 #include "app.h"
+#include "efxlibrary.h"
 #include "uimanager.h"
 #include "simpledesk.h"
 #include "showmanager.h"
@@ -700,6 +701,10 @@ void App::initDoc()
     /* Load RGB scripts */
     m_doc->rgbScriptsCache()->load(RGBScriptsCache::systemScriptsDirectory());
     m_doc->rgbScriptsCache()->load(RGBScriptsCache::userScriptsDirectory());
+
+    /* Load the JSON effect library (system presets, then user effects) */
+    EFXLibrary::instance()->reload();
+    EFXLibrary::instance()->setWatching(true);
 
     /* Load plugins */
 #if defined Q_OS_ANDROID

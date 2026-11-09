@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop">
+ <id>org.qlcplus.QLCPlus6</id>
+ <metadata_license>CC-BY-SA-3.0</metadata_license>
+ <project_license>Apache-2.0</project_license>
+ <name>Q Light Controller Plus 6 - EFX 2.0</name>
+ <summary>DMX lighting control with JSON-based EFX 2.0 effect system</summary>
+ <summary xml:lang="de">DMX-Lichtsteuerung mit JSON-basiertem EFX 2.0 Effektsystem</summary>
+ <description>
+  <p>
+   QLC+ 6 is an EFX 2.0 rewrite fork of QLC+. Effects are defined as JSON
+   files with keyframes, Bezier paths, an expression language, and arbitrary
+   channel bindings. An HTTP upload API allows external generators to push
+   effects into the running application.
+  </p>
+  <p xml:lang="de">
+   QLC+ 6 ist ein EFX-2.0-Rewrite-Fork von QLC+. Effekte werden als JSON-Dateien
+   mit Keyframes, Bezier-Pfaden, einer Ausdruckssprache und beliebigen
+   Kanal-Bindings definiert. Eine HTTP-Upload-API ermöglicht externen Generatoren,
+   Effekte in die laufende Anwendung zu übertragen.
+  </p>
+ </description>
+ <url type="homepage">https://www.qlcplus.org/</url>
+ <launchable type="desktop-id">qlcplus6.desktop</launchable>
+ <provides>
+  <binary>qlcplus6</binary>
+ </provides>
+</component>

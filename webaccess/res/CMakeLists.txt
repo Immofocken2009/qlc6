@@ -26,7 +26,9 @@ set(WEBFILES_CLASSIC
     virtualconsole.js
 )
 
-if(qmlui)
+if(qlc6)
+    set(WEBFILES ${WEBFILES_COMMON})
+elseif(qmlui)
     set(WEBFILES ${WEBFILES_COMMON} ${WEBFILES_QML})
 else()
     set(WEBFILES ${WEBFILES_COMMON} ${WEBFILES_CLASSIC})
@@ -51,3 +53,14 @@ endif()
 
 # Install the webfiles target to the specified path
 install(FILES ${WEBFILES} DESTINATION ${WEBFILES_PATH})
+
+# qlc6: install the QML web files renamed from -v5 to -v6 so they can coexist
+# with an installed qlcplus5 package (both would otherwise claim the same path).
+if(qlc6)
+    foreach(src IN LISTS WEBFILES_QML)
+        string(REPLACE "-v5" "-v6" dst "${src}")
+        install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/${src}
+                DESTINATION ${WEBFILES_PATH}
+                RENAME ${dst})
+    endforeach()
+endif()

@@ -11,3 +11,4 @@ add_subdirectory(samples)
 # unconditionally so that the shared data package is identical for QLC+ 4 and 5
 add_subdirectory(colorfilters)
 add_subdirectory(meshes)
+add_subdirectory(efx)

@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "id": "leaf",
+  "name": "Leaf",
+  "version": 1,
+  "description": "Leaf shape",
+  "channels": [
+    {
+      "target": "pan",
+      "expr": "pow(cos(theta + pi/2), 5)"
+    },
+    {
+      "target": "tilt",
+      "expr": "cos(theta)"
+    }
+  ]
+}

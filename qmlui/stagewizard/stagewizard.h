@@ -398,10 +398,10 @@ private:
     /** Relative movement EFX (Circle/Eight/…): builds the EFX and wraps it with a
      *  base Position scene in a Collection so it starts from a defined aim. */
     void generateMovementEffect(const FixtureGroupEntry &grp, const QString &prefix,
-                                int algorithm, const QString &label, MovementAnchor anchor);
+                                const QString &effectId, const QString &label, MovementAnchor anchor);
 
     void generateEFX(const FixtureGroupEntry &grp, const QString &prefix,
-                     int algorithm, const QString &label);
+                     const QString &effectId, const QString &label);
     void generateRGBMatrix(const FixtureGroupEntry &grp, const QString &scriptName,
                            const QString &label);
     Chaser *generateStrobeChase(const FixtureGroupEntry &grp, const QString &prefix);

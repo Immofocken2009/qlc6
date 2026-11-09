@@ -11,7 +11,10 @@
 UPSTREAM_VERSION := $(shell dpkg-parsechangelog -SVersion | cut -d- -f1)
 QLCPLUS_MAJOR := $(shell echo $(UPSTREAM_VERSION) | cut -d. -f1)
 
-ifeq ($(QLCPLUS_MAJOR),5)
+ifeq ($(QLCPLUS_MAJOR),6)
+QMLUI = -Dqlc6=on -Dqmlui=on
+FLAVOUR_PACKAGES = -pqlcplus6 -pqlcplus-data
+else ifeq ($(QLCPLUS_MAJOR),5)
 QMLUI = -Dqmlui=on
 FLAVOUR_PACKAGES = -pqlcplus5 -pqlcplus-data
 else

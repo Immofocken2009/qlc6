@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "id": "eight",
+  "name": "Eight",
+  "version": 1,
+  "description": "Figure eight",
+  "channels": [
+    {
+      "target": "pan",
+      "expr": "cos(2*theta + pi/2)"
+    },
+    {
+      "target": "tilt",
+      "expr": "cos(theta)"
+    }
+  ]
+}

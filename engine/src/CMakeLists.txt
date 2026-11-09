@@ -22,7 +22,11 @@ add_library(${module_name} ${QLC_LIB_TYPE}
     dmxsource.h
     doc.cpp doc.h
     efx.cpp efx.h
+    efxeffect.cpp efxeffect.h
+    efxexpression.cpp efxexpression.h
     efxfixture.cpp efxfixture.h
+    efxlibrary.cpp efxlibrary.h
+    efxpath.cpp efxpath.h
     fadechannel.cpp fadechannel.h
     fixture.cpp fixture.h
     fixturegroup.cpp fixturegroup.h
@@ -158,10 +162,16 @@ if((NOT ANDROID AND NOT IOS) AND (${FFTW3_FOUND}))
 endif()
 
 # Keep the CMake target name stable ("qlcplusengine") so that all the
-# dependants don't need to know about the flavour, but give the QLC+ 5
-# library a distinct file name, so it can be installed next to the QLC+ 4
-# one: libqlcplusengine5.so vs libqlcplusengine.so
-if(qmlui AND UNIX AND NOT ANDROID AND NOT IOS AND NOT APPLE)
+# dependants don't need to know about the flavour, but give each flavour a
+# distinct library file name so they can be installed side by side:
+#   libqlcplusengine.so   (qlcplus 4)
+#   libqlcplusengine5.so  (qlcplus 5 / qmlui)
+#   libqlcplusengine6.so  (qlcplus 6 / qlc6 EFX-2.0 fork)
+if(qlc6 AND UNIX AND NOT ANDROID AND NOT IOS AND NOT APPLE)
+    set_target_properties(${module_name} PROPERTIES
+        OUTPUT_NAME "qlcplusengine6"
+    )
+elseif(qmlui AND UNIX AND NOT ANDROID AND NOT IOS AND NOT APPLE)
     set_target_properties(${module_name} PROPERTIES
         OUTPUT_NAME "qlcplusengine5"
     )

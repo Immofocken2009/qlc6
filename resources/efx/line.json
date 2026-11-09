@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "id": "line",
+  "name": "Line",
+  "version": 1,
+  "description": "Diagonal line, back and forth",
+  "channels": [
+    {
+      "target": "pan",
+      "expr": "cos(theta)"
+    },
+    {
+      "target": "tilt",
+      "expr": "cos(theta)"
+    }
+  ],
+  "reverse": "if(theta > pi, theta - pi, theta + pi)"
+}

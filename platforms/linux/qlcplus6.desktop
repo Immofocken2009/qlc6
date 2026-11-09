@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Q Light Controller Plus 6 - EFX 2.0
+GenericName=Lighting control
+GenericName[de]=Lichtsteuerung
+GenericName[fr]=Contrôleur de luminaires
+GenericName[it]=Controllore di luci
+GenericName[es]=Controlador de iluminación
+Keywords=qlc;qlc6;light;controller;dmx;efx;analog;midi;artnet;e131;osc;
+Exec=qlcplus6 --open %f
+Icon=qlcplus
+MimeType=application/x-qlc-workspace;
+Categories=Qt;AudioVideo;

@@ -96,3 +96,39 @@ Depends:
  ${misc:Depends},
 Description: Debugging symbols for Q Light Controller Plus 5
  Q Light Controller Plus 5 debugging symbols.
+Package: qlcplus6
+Section: misc
+Architecture: any
+Depends:
+ ${shlibs:Depends},
+ ${misc:Depends},
+ qlcplus-data,
+ qml6-module-qtqml-workerscript,
+ qml6-module-qtquick-controls,
+ qml6-module-qtquick-dialogs,
+ qml6-module-qtquick-layouts,
+ qml6-module-qtquick-templates,
+ qml6-module-qtquick-window,
+Recommends:
+ libsndfile1,
+ libqt6multimedia6,
+ gstreamer1.0-plugins-good,
+ gstreamer1.0-plugins-base,
+ gstreamer1.0-libav,
+Conflicts: qlcplus6-dbg
+Description: Q Light Controller Plus 6 (EFX 2.0 rewrite)
+ EFX 2.0 rewrite of QLC+ with JSON-based effect library,
+ expression language, Bezier paths and HTTP upload API.
+ .
+ Installs as qlcplus6 and can run alongside qlcplus and qlcplus5.
+
+Package: qlcplus6-dbg
+Architecture: any
+Section: debug
+Priority: extra
+Depends:
+ qlcplus6 (= ${binary:Version}),
+ ${misc:Depends},
+Description: Debugging symbols for Q Light Controller Plus 6
+ Q Light Controller Plus 6 EFX 2.0 rewrite debugging symbols.
+

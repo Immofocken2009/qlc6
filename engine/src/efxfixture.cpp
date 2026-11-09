@@ -27,6 +27,8 @@
 #include "fadechannel.h"
 #include "mastertimer.h"
 #include "efxfixture.h"
+#include "qlcfixturehead.h"
+#include "fixture.h"
 #include "qlcmacros.h"
 #include "function.h"
 #include "universe.h"
@@ -176,7 +178,8 @@ bool EFXFixture::isValid() const
     else if (m_mode == PanTilt &&
              fxi->channelNumber(QLCChannel::Pan, QLCChannel::MSB, head().head) == QLCChannel::invalid() && // Maybe a device can pan OR tilt
              fxi->channelNumber(QLCChannel::Tilt, QLCChannel::MSB, head().head) == QLCChannel::invalid())   // but not both
-        return false;
+        // no pan/tilt: still valid when the effect drives other channels (dimmer, colour ...) of this head
+        return !resolveBindings(m_parent->effect(), fxi, head().head).isEmpty();
     else if (m_mode == Dimmer &&
              fxi->masterIntensityChannel() == QLCChannel::invalid() &&
              fxi->channelNumber(QLCChannel::Intensity, QLCChannel::MSB, head().head) == QLCChannel::invalid())
@@ -451,6 +454,17 @@ void EFXFixture::start(QSharedPointer<GenericFader> fader)
         }
         break;
     }
+
+    m_boundEffect = m_parent->effect();
+    m_bindings = resolveBindings(m_boundEffect, fxi, head().head);
+
+    /* Fine channels that are not next to their coarse channel cannot be combined */
+    for (const ChannelBinding& b : qAsConst(m_bindings))
+    {
+        if (b.lsb != QLCChannel::invalid() && b.lsb - b.msb != 1)
+            fader->setHandleSecondary(false);
+    }
+
     m_started = true;
 }
 
@@ -507,33 +521,44 @@ void EFXFixture::nextStep(QList<Universe *> universes, QSharedPointer<GenericFad
                            float(0), float(m_parent->loopDuration()),
                            float(0), float(M_PI * 2));
 
+    /* An effect without pan/tilt (dimmer/colour only) must not move the heads */
+    const bool movement = m_parent->hasPanTilt();
+
     float valX = 0;
     float valY = 0;
 
-    m_parent->calculatePoint(m_runTimeDirection, m_startOffset, m_currentAngle, &valX, &valY);
-
-    /* Set target values on faders/universes */
-    switch (m_mode)
+    if (movement)
     {
-        case PanTilt:
-            setPointPanTilt(universes, fader, valX, valY);
-            /* When dimmer control is enabled, drive the dimmer from the EFX cycle
-               angle, phased by this fixture's StartOffset. See EFX::dimmerLevel(). */
-            if (m_parent->dimmerControlEnabled())
-                setPointIntensity(universes, fader,
-                                  m_parent->dimmerLevel(m_parent->convertOffset(m_startOffset),
-                                                        m_currentAngle));
-        break;
+        m_parent->calculatePoint(m_runTimeDirection, m_startOffset, m_currentAngle, &valX, &valY,
+                                 m_parent->fixtures().indexOf(this), m_parent->fixtures().size(),
+                                 m_head.head);
 
-        case RGB:
-            setPointRGB(universes, fader, valX, valY);
-        break;
+        /* Set target values on faders/universes */
+        switch (m_mode)
+        {
+            case PanTilt:
+                setPointPanTilt(universes, fader, valX, valY);
+                /* When dimmer control is enabled, drive the dimmer from the EFX cycle
+                   angle, phased by this fixture's StartOffset. See EFX::dimmerLevel(). */
+                if (m_parent->dimmerControlEnabled())
+                    setPointIntensity(universes, fader,
+                                      m_parent->dimmerLevel(m_parent->convertOffset(m_startOffset),
+                                                            m_currentAngle));
+            break;
 
-        case Dimmer:
-            //Use Y for coherence with RGB gradient.
-            setPointDimmer(universes, fader, valY);
-        break;
+            case RGB:
+                setPointRGB(universes, fader, valX, valY);
+            break;
+
+            case Dimmer:
+                //Use Y for coherence with RGB gradient.
+                setPointDimmer(universes, fader, valY);
+            break;
+        }
     }
+
+    /* Dimmer, colour, gobo ... channels of the effect */
+    setPointChannels(universes, fader);
 }
 
 void EFXFixture::updateFaderValues(FadeChannel &fc, quint32 value)
@@ -651,6 +676,170 @@ void EFXFixture::setPointDimmer(QList<Universe *> universes, QSharedPointer<Gene
         fader->updateChannel(doc(), uni, head().fxi, dimmerChannel, [this, dimmerValue](FadeChannel &fc)
         {
             updateFaderValues(fc, dimmerValue);
+        });
+    }
+}
+
+static QLCChannel::PrimaryColour colourForTarget(const QString& target)
+{
+    static const QHash<QString, QLCChannel::PrimaryColour> colours = {
+        { "red", QLCChannel::Red },         { "green", QLCChannel::Green },
+        { "blue", QLCChannel::Blue },       { "cyan", QLCChannel::Cyan },
+        { "magenta", QLCChannel::Magenta }, { "yellow", QLCChannel::Yellow },
+        { "amber", QLCChannel::Amber },     { "white", QLCChannel::White },
+        { "uv", QLCChannel::UV },           { "lime", QLCChannel::Lime },
+        { "indigo", QLCChannel::Indigo }
+    };
+    return colours.value(target, QLCChannel::NoColour);
+}
+
+/** First coarse channel of the head that belongs to @a group and, if given, one of @a presets */
+static quint32 findGroupChannel(const Fixture *fxi, int head, QLCChannel::Group group,
+                                const QList<QLCChannel::Preset>& presets = QList<QLCChannel::Preset>())
+{
+    const QList<quint32> channels = fxi->head(head).channels();
+    for (quint32 i : channels)
+    {
+        const QLCChannel *ch = fxi->channel(i);
+        if (ch == nullptr || ch->group() != group || ch->controlByte() != QLCChannel::MSB)
+            continue;
+        if (!presets.isEmpty() && !presets.contains(ch->preset()))
+            continue;
+        return i;
+    }
+    return QLCChannel::invalid();
+}
+
+QVector<EFXFixture::ChannelBinding> EFXFixture::resolveBindings(const EFXEffectPtr& effect, const Fixture *fxi, int head)
+{
+    QVector<ChannelBinding> list;
+    if (effect.isNull() || fxi == nullptr || head < 0 || head >= int(fxi->heads()))
+        return list;
+
+    const QList<EFXEffectChannel>& channels = effect->channels();
+    for (int i = 0; i < channels.size(); i++)
+    {
+        const EFXEffectChannel& ch = channels.at(i);
+        ChannelBinding b;
+        b.effectChannel = i;
+        b.msb = b.lsb = QLCChannel::invalid();
+
+        if (ch.rawChannel >= 0)
+        {
+            if (quint32(ch.rawChannel) >= fxi->channels())
+                continue;
+            b.msb = quint32(ch.rawChannel);
+        }
+        else if (ch.target == "pan" || ch.target == "tilt")
+        {
+            continue; // handled by the pan/tilt pipeline
+        }
+        else if (ch.target == "dimmer" || ch.target == "intensity")
+        {
+            b.msb = fxi->channelNumber(QLCChannel::Intensity, QLCChannel::MSB, head);
+            if (b.msb != QLCChannel::invalid())
+                b.lsb = fxi->channelNumber(QLCChannel::Intensity, QLCChannel::LSB, head);
+            else
+                b.msb = fxi->masterIntensityChannel();
+        }
+        else if (colourForTarget(ch.target) != QLCChannel::NoColour)
+        {
+            const QLCChannel::PrimaryColour colour = colourForTarget(ch.target);
+            b.msb = fxi->channelNumber(colour, QLCChannel::MSB, head);
+            if (b.msb != QLCChannel::invalid())
+                b.lsb = fxi->channelNumber(colour, QLCChannel::LSB, head);
+        }
+        else if (ch.target == "colorwheel" || ch.target == "colourwheel")
+            b.msb = findGroupChannel(fxi, head, QLCChannel::Colour);
+        else if (ch.target == "gobo")
+            b.msb = findGroupChannel(fxi, head, QLCChannel::Gobo);
+        else if (ch.target == "shutter" || ch.target == "strobe")
+            b.msb = findGroupChannel(fxi, head, QLCChannel::Shutter,
+                                     QList<QLCChannel::Preset>() << QLCChannel::ShutterStrobeSlowFast
+                                                                 << QLCChannel::ShutterStrobeFastSlow
+                                                                 << QLCChannel::Custom);
+        else if (ch.target == "iris")
+            b.msb = findGroupChannel(fxi, head, QLCChannel::Shutter,
+                                     QList<QLCChannel::Preset>() << QLCChannel::ShutterIrisMinToMax
+                                                                 << QLCChannel::ShutterIrisMaxToMin);
+        else if (ch.target == "zoom")
+            b.msb = findGroupChannel(fxi, head, QLCChannel::Beam,
+                                     QList<QLCChannel::Preset>() << QLCChannel::BeamZoomSmallBig
+                                                                 << QLCChannel::BeamZoomBigSmall);
+        else if (ch.target == "focus")
+            b.msb = findGroupChannel(fxi, head, QLCChannel::Beam,
+                                     QList<QLCChannel::Preset>() << QLCChannel::BeamFocusNearFar
+                                                                 << QLCChannel::BeamFocusFarNear);
+        else if (ch.target == "prism")
+            b.msb = findGroupChannel(fxi, head, QLCChannel::Prism);
+        else if (ch.target == "speed")
+            b.msb = findGroupChannel(fxi, head, QLCChannel::Speed);
+
+        if (b.msb != QLCChannel::invalid())
+            list << b;
+    }
+    return list;
+}
+
+void EFXFixture::setPointChannels(QList<Universe *> universes, QSharedPointer<GenericFader> fader)
+{
+    if (fader.isNull())
+        return;
+
+    /* The effect may have been replaced (library reload): bind again */
+    EFXEffectPtr effect = m_parent->effect();
+    if (effect != m_boundEffect)
+    {
+        Fixture *fxi = doc()->fixture(head().fxi);
+        m_boundEffect = effect;
+        m_bindings = resolveBindings(effect, fxi, head().head);
+    }
+
+    if (m_bindings.isEmpty())
+        return;
+
+    const EFXEffectPtr evaluated = m_parent->calculateChannelValues(m_runTimeDirection, m_startOffset, m_currentAngle,
+                                                                    m_parent->fixtures().indexOf(this),
+                                                                    m_parent->fixtures().size(),
+                                                                    m_head.head, &m_values);
+    if (evaluated.isNull() || evaluated != m_boundEffect)
+        return;
+
+    Universe *uni = universes[universe()];
+
+    for (const ChannelBinding& b : qAsConst(m_bindings))
+    {
+        if (b.effectChannel >= m_values.size())
+            continue;
+
+        /* Effect values are 0..1, anything else is clamped */
+        const double level = qBound(0.0, m_values.at(b.effectChannel), 1.0);
+        const float scaled = float(level * double(UCHAR_MAX));
+
+        quint32 value = quint32(scaled);
+        quint32 channel = b.msb;
+
+        if (b.lsb != QLCChannel::invalid())
+        {
+            const quint32 fine = quint32((scaled - floor(scaled)) * float(UCHAR_MAX));
+            if (fader->handleSecondary())
+            {
+                fader->updateChannel(doc(), uni, head().fxi, b.msb, [](FadeChannel &) {});
+                value = (value << 8) + fine;
+                channel = b.lsb;
+            }
+            else
+            {
+                fader->updateChannel(doc(), uni, head().fxi, b.lsb, [this, fine](FadeChannel &fc)
+                {
+                    updateFaderValues(fc, fine);
+                });
+            }
+        }
+
+        fader->updateChannel(doc(), uni, head().fxi, channel, [this, value](FadeChannel &fc)
+        {
+            updateFaderValues(fc, value);
         });
     }
 }

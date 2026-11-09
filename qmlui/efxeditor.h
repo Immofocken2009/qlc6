@@ -22,6 +22,8 @@
 
 #include "functioneditor.h"
 #include "treemodel.h"
+#include "efxeffect.h"
+#include "simulationclient.h"
 
 class Doc;
 class EFX;
@@ -32,8 +34,9 @@ class EFXEditor final : public FunctionEditor
 {
     Q_OBJECT
 
-    Q_PROPERTY(QStringList algorithms READ algorithms CONSTANT)
+    Q_PROPERTY(QStringList algorithms READ algorithms NOTIFY effectListChanged)
     Q_PROPERTY(int algorithmIndex READ algorithmIndex WRITE setAlgorithmIndex NOTIFY algorithmIndexChanged)
+    Q_PROPERTY(QVariantList effectParams READ effectParams NOTIFY effectParamsChanged)
 
     Q_PROPERTY(bool isRelative READ isRelative WRITE setIsRelative NOTIFY isRelativeChanged)
     Q_PROPERTY(int algorithmWidth READ algorithmWidth WRITE setAlgorithmWidth NOTIFY algorithmWidthChanged)
@@ -43,10 +46,6 @@ class EFXEditor final : public FunctionEditor
     Q_PROPERTY(int algorithmYOffset READ algorithmYOffset WRITE setAlgorithmYOffset NOTIFY algorithmYOffsetChanged)
     Q_PROPERTY(int algorithmRotation READ algorithmRotation WRITE setAlgorithmRotation NOTIFY algorithmRotationChanged)
     Q_PROPERTY(int algorithmStartOffset READ algorithmStartOffset WRITE setAlgorithmStartOffset NOTIFY algorithmStartOffsetChanged)
-    Q_PROPERTY(int algorithmXFrequency READ algorithmXFrequency WRITE setAlgorithmXFrequency NOTIFY algorithmXFrequencyChanged)
-    Q_PROPERTY(int algorithmYFrequency READ algorithmYFrequency WRITE setAlgorithmYFrequency NOTIFY algorithmYFrequencyChanged)
-    Q_PROPERTY(int algorithmXPhase READ algorithmXPhase WRITE setAlgorithmXPhase NOTIFY algorithmXPhaseChanged)
-    Q_PROPERTY(int algorithmYPhase READ algorithmYPhase WRITE setAlgorithmYPhase NOTIFY algorithmYPhaseChanged)
 
     Q_PROPERTY(int propagation READ propagation WRITE setPropagation NOTIFY propagationChanged)
 
@@ -60,6 +59,19 @@ class EFXEditor final : public FunctionEditor
     Q_PROPERTY(QVariantList algorithmData READ algorithmData NOTIFY algorithmDataChanged)
     Q_PROPERTY(QVariantList fixturesData READ fixturesData WRITE setFixturesData NOTIFY fixturesDataChanged)
 
+    Q_PROPERTY(bool pathEditing READ pathEditing NOTIFY pathEditingChanged)
+    Q_PROPERTY(QVariantList pathPoints READ pathPoints NOTIFY pathPointsChanged)
+    Q_PROPERTY(bool pathClosed READ pathClosed WRITE setPathClosed NOTIFY pathPointsChanged)
+
+    // Simulation API
+    Q_PROPERTY(QString simApiUrl READ simApiUrl WRITE setSimApiUrl NOTIFY simApiUrlChanged)
+    Q_PROPERTY(QString simApiToken READ simApiToken WRITE setSimApiToken NOTIFY simApiTokenChanged)
+    Q_PROPERTY(bool simBusy READ simBusy NOTIFY simBusyChanged)
+    Q_PROPERTY(QVariantList simScenarios READ simScenarios NOTIFY simScenariosChanged)
+    Q_PROPERTY(QVariantList simSpots READ simSpots NOTIFY simSpotsChanged)
+    Q_PROPERTY(QString simLastError READ simLastError NOTIFY simLastErrorChanged)
+    Q_PROPERTY(QString simLastStatus READ simLastStatus NOTIFY simLastStatusChanged)
+
 public:
     EFXEditor(QQuickView *view, Doc *doc, QObject *parent = 0);
     ~EFXEditor();
@@ -67,12 +79,18 @@ public:
     /** Set the ID of the EFX to edit */
     void setFunctionID(quint32 id) override;
 
+    /** Rebuild the selector list from the effect library */
+    void refreshEffectList();
+
 protected slots:
     void slotAttributeChanged(int attrIndex, qreal fraction);
 
 private:
     /** Reference of the EFX currently being edited */
     EFX *m_efx;
+
+    /** Effect ids shown in the selector, sorted; same order as algorithms() */
+    QStringList m_effectIds;
 
     /************************************************************************
      * Algorithm
@@ -112,21 +130,12 @@ public:
     int algorithmStartOffset() const;
     void setAlgorithmStartOffset(int algorithmStartOffset);
 
-    /** Get/set the current algorithm X frequency */
-    int algorithmXFrequency() const;
-    void setAlgorithmXFrequency(int algorithmXFrequency);
+    /** The parameters of the selected effect, one map per parameter:
+     *  id, label, type, min, max, step, value */
+    QVariantList effectParams() const;
 
-    /** Get/set the current algorithm Y frequency */
-    int algorithmYFrequency() const;
-    void setAlgorithmYFrequency(int algorithmYFrequency);
-
-    /** Get/set the current algorithm X phase */
-    int algorithmXPhase() const;
-    void setAlgorithmXPhase(int algorithmXPhase);
-
-    /** Get/set the current algorithm Y phase */
-    int algorithmYPhase() const;
-    void setAlgorithmYPhase(int algorithmYPhase);
+    /** Set a parameter of the selected effect by its id */
+    Q_INVOKABLE void setEffectParam(const QString &id, double value);
 
     /** Get/set whether the EFX drives the fixtures' dimmer from their tilt */
     bool dimmerControl() const;
@@ -142,10 +151,8 @@ signals:
     void algorithmYOffsetChanged();
     void algorithmRotationChanged();
     void algorithmStartOffsetChanged();
-    void algorithmXFrequencyChanged();
-    void algorithmYFrequencyChanged();
-    void algorithmXPhaseChanged();
-    void algorithmYPhaseChanged();
+    void effectListChanged();
+    void effectParamsChanged();
 
     /************************************************************************
      * Fixtures
@@ -239,11 +246,131 @@ signals:
     void algorithmDataChanged();
     void fixturesDataChanged();
 
+    /************************************************************************
+     * Shape (path) editing
+     ************************************************************************/
+public:
+    /** True while a shape is being edited (not saved yet) */
+    bool pathEditing() const;
+
+    /** The points of the shape being edited, in the -1..1 pan/tilt space. One map per
+     *  point: x, y (anchor), ix, iy (incoming handle), ox, oy (outgoing handle) and
+     *  corner (true when both handles sit on the anchor) */
+    QVariantList pathPoints() const;
+
+    bool pathClosed() const;
+    void setPathClosed(bool closed);
+
+    /** Start editing the current effect as a path. Formula effects are converted to points
+     *  (the original stays untouched). @return false if there is nothing to edit */
+    Q_INVOKABLE bool beginPathEdit();
+
+    /** Throw the changes away and go back to the effect that was selected before */
+    Q_INVOKABLE void cancelPathEdit();
+
+    /** Save the edited shape as a new user effect named @a name and select it.
+     *  @return an empty string on success, otherwise an error message */
+    Q_INVOKABLE QString commitPathEdit(const QString &name);
+
+    /** Move an anchor; its handles move with it */
+    Q_INVOKABLE void movePathPoint(int index, qreal x, qreal y);
+
+    /** Move one handle of an anchor. With @a mirror the opposite handle follows symmetrically */
+    Q_INVOKABLE void movePathHandle(int index, bool outgoing, qreal x, qreal y, bool mirror);
+
+    /** Add a point at (x, y): on the path it splits the nearest segment (the shape is kept),
+     *  away from the path it is appended to an open path. @return the index of the new point */
+    Q_INVOKABLE int insertPathPoint(qreal x, qreal y);
+
+    /** Remove a point (a path keeps at least 2) */
+    Q_INVOKABLE void deletePathPoint(int index);
+
+    /** Make a point a sharp corner, or smooth it with automatic handles */
+    Q_INVOKABLE void setPathPointCorner(int index, bool corner);
+
+    /** Replace the shape with a freehand stroke: a flat list x0, y0, x1, y1... */
+    Q_INVOKABLE void setPathStroke(const QVariantList &xy);
+
+signals:
+    void pathEditingChanged();
+    void pathPointsChanged();
+
+private:
+    /** Rebuild the previewed effect from the draft points */
+    void applyPathDraft();
+    void autoHandles(int index);
+
+private:
+    bool m_pathEditing;
+    QVector<EFXPathPoint> m_draftPoints;
+    bool m_draftClosed;
+    EFXPath::Easing m_draftEasing;
+    EFXEffectPtr m_draftOrigin;
+
 private:
     /** EFX algorithm data exchanged with the QML world */
     QVariantList m_algorithmData;
     /** Start index and direction of each fixture of the EFX */
     QVariantList m_fixturesData;
+
+    /************************************************************************
+     * Simulation API integration
+     ************************************************************************/
+public:
+    QString simApiUrl() const;
+    void setSimApiUrl(const QString& url);
+    QString simApiToken() const;
+    void setSimApiToken(const QString& token);
+    bool simBusy() const;
+    QVariantList simScenarios() const;
+    QVariantList simSpots() const;
+    QString simLastError() const;
+    QString simLastStatus() const;
+
+    /** Test connection to the simulation server.  Result via simConnectionTested(). */
+    Q_INVOKABLE void simTestConnection();
+    /** Fetch scenario list.  Result via simScenariosChanged(). */
+    Q_INVOKABLE void simFetchScenarios();
+    /** Fetch spots for @a scenarioId.  Result via simSpotsChanged(). */
+    Q_INVOKABLE void simFetchSpots(int scenarioId);
+    /**
+     * Send @a request to the simulation and import the result as user effects.
+     * @param request QVariantMap with keys hall_id, fixtures ([{spot_id, qlc_fixture_id}]),
+     *                movements ([{t,x,y}]), coord_system.
+     * Result: emits simImportDone(importedCount, errorCount).
+     */
+    Q_INVOKABLE void simCalculateAndImport(const QVariantMap& request);
+
+    /** Save API URL and token to QSettings */
+    Q_INVOKABLE void simSaveSettings();
+
+signals:
+    void simApiUrlChanged();
+    void simApiTokenChanged();
+    void simBusyChanged();
+    void simScenariosChanged();
+    void simSpotsChanged();
+    void simLastErrorChanged();
+    void simLastStatusChanged();
+
+    /** Emitted when testConnection() completes. */
+    void simConnectionTested(bool ok, const QString& message);
+    /** Emitted after calculateAndImport() – how many effects were imported / failed. */
+    void simImportDone(int imported, int failed);
+
+private:
+    void onSimConnectionTested(bool ok, const QString& msg, const QJsonObject& info);
+    void onSimScenariosFetched(const QJsonArray& arr);
+    void onSimSpotsFetched(int scenarioId, const QJsonObject& obj);
+    void onSimPanTiltCalculated(const QJsonObject& response);
+    void onSimRequestFailed(const QString& op, const QString& err);
+
+private:
+    SimulationClient *m_simClient;
+    QVariantList m_simScenarios;
+    QVariantList m_simSpots;
+    QString m_simLastError;
+    QString m_simLastStatus;
 };
 
 #endif // EFXEDITOR_H

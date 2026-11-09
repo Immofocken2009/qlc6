@@ -269,9 +269,10 @@ int QHttpConnection::HeadersComplete(http_parser *parser)
     theConnection->m_request->m_remoteAddress = theConnection->m_socket->peerAddress().toString();
     theConnection->m_request->m_remotePort = theConnection->m_socket->peerPort();
 
-    if (theConnection->m_request->method() == QHttpRequest::HTTP_POST)
+    if (theConnection->m_request->method() == QHttpRequest::HTTP_POST ||
+        theConnection->m_request->method() == QHttpRequest::HTTP_PUT)
     {
-        // on a POST, do not emit the newRequest signal until the transfer has
+        // on a POST or PUT, do not emit the newRequest signal until the transfer has
         // been completed
         theConnection->m_postPending = true;
     }

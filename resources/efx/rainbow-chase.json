@@ -1,0 +1,43 @@
+{
+  "schema": 1,
+  "id": "rainbow-chase",
+  "name": "Rainbow Chase",
+  "params": [
+    {
+      "id": "spread",
+      "label": "Spread",
+      "type": "float",
+      "min": 0,
+      "max": 1,
+      "default": 0.25
+    }
+  ],
+  "channels": [
+    {
+      "target": "pan",
+      "expr": "sin(theta)"
+    },
+    {
+      "target": "tilt",
+      "expr": "0.3 * sin(2 * theta)"
+    },
+    {
+      "target": "dimmer",
+      "expr": "pulse(t + i * spread, 0.5)"
+    },
+    {
+      "target": "red",
+      "expr": "0.5 + 0.5 * sin(theta + i * spread * 2 * pi)"
+    },
+    {
+      "target": "green",
+      "expr": "0.5 + 0.5 * sin(theta + i * spread * 2 * pi + 2.094)"
+    },
+    {
+      "target": "blue",
+      "expr": "0.5 + 0.5 * sin(theta + i * spread * 2 * pi + 4.188)"
+    }
+  ],
+  "version": 1,
+  "description": "Pan/tilt sweep with a per-fixture colour cycle and dimmer pulse"
+}

@@ -644,7 +644,27 @@ Rectangle
                                     textRole: ""
                                     model: efxEditor.algorithms
                                     currentIndex: efxEditor.algorithmIndex
+                                    enabled: !efxEditor.pathEditing
                                     onCurrentIndexChanged: efxEditor.algorithmIndex = currentIndex
+                                }
+
+                                // shape editing
+                                GenericButton
+                                {
+                                    Layout.columnSpan: 2
+                                    Layout.fillWidth: true
+                                    height: editorColumn.itemsHeight
+                                    visible: !efxEditor.pathEditing
+                                    label: qsTr("Edit shape...")
+                                    onClicked: efxEditor.beginPathEdit()
+                                }
+                                Loader
+                                {
+                                    Layout.columnSpan: 2
+                                    Layout.fillWidth: true
+                                    active: efxEditor.pathEditing
+                                    visible: active
+                                    source: "qrc:/EFXPathEditor.qml"
                                 }
 
                                 // row 2
@@ -767,75 +787,54 @@ Rectangle
                                     onValueModified: efxEditor.algorithmStartOffset = value
                                 }
 
-                                // row 9
-                                RobotoText
+                                // Parameters of the selected effect. They come straight from
+                                // the effect JSON, so every effect gets its own controls.
+                                Repeater
                                 {
-                                    visible: patternCombo.displayText === "Lissajous"
-                                    label: qsTr("X frequency")
-                                    height: UISettings.listItemHeight
-                                }
-                                CustomSpinBox
-                                {
-                                    visible: patternCombo.displayText === "Lissajous"
-                                    Layout.fillWidth: true
-                                    from: 0
-                                    to: 32
-                                    value: efxEditor.algorithmXFrequency
-                                    onValueModified: efxEditor.algorithmXFrequency = value
+                                    model: efxEditor.effectParams
+
+                                    delegate: Item
+                                    {
+                                        Layout.columnSpan: 2
+                                        Layout.fillWidth: true
+                                        height: UISettings.listItemHeight
+
+                                        RobotoText
+                                        {
+                                            id: paramLabel
+                                            width: parent.width * 0.4
+                                            height: parent.height
+                                            label: modelData.label
+                                        }
+
+                                        CustomCheckBox
+                                        {
+                                            visible: modelData.type === "bool"
+                                            anchors.left: paramLabel.right
+                                            implicitWidth: parent.height
+                                            implicitHeight: implicitWidth
+                                            autoExclusive: false
+                                            checked: modelData.value !== 0
+                                            onToggled: efxEditor.setEffectParam(modelData.id, checked ? 1 : 0)
+                                        }
+
+                                        CustomDoubleSpinBox
+                                        {
+                                            visible: modelData.type !== "bool"
+                                            anchors.left: paramLabel.right
+                                            anchors.right: parent.right
+                                            height: parent.height
+                                            suffix: ""
+                                            decimals: modelData.type === "int" ? 0 : 2
+                                            realFrom: modelData.min
+                                            realTo: modelData.max
+                                            realStep: modelData.step > 0 ? modelData.step : (modelData.type === "int" ? 1 : 0.1)
+                                            realValue: modelData.value
+                                            onValueModified: efxEditor.setEffectParam(modelData.id, value / Math.pow(10, decimals))
+                                        }
+                                    }
                                 }
 
-                                // row 10
-                                RobotoText
-                                {
-                                    visible: patternCombo.displayText === "Lissajous"
-                                    label: qsTr("Y frequency")
-                                    height: UISettings.listItemHeight
-                                }
-                                CustomSpinBox
-                                {
-                                    visible: patternCombo.displayText === "Lissajous"
-                                    Layout.fillWidth: true
-                                    from: 0
-                                    to: 32
-                                    value: efxEditor.algorithmYFrequency
-                                    onValueModified: efxEditor.algorithmYFrequency = value
-                                }
-
-                                // row 11
-                                RobotoText
-                                {
-                                    visible: patternCombo.displayText === "Lissajous"
-                                    label: qsTr("X phase")
-                                    height: UISettings.listItemHeight
-                                }
-                                CustomSpinBox
-                                {
-                                    visible: patternCombo.displayText === "Lissajous"
-                                    Layout.fillWidth: true
-                                    from: 0
-                                    to: 360
-                                    suffix: "°"
-                                    value: efxEditor.algorithmXPhase
-                                    onValueModified: efxEditor.algorithmXPhase = value
-                                }
-
-                                // row 9
-                                RobotoText
-                                {
-                                    visible: patternCombo.displayText === "Lissajous"
-                                    label: qsTr("Y phase")
-                                    height: UISettings.listItemHeight
-                                }
-                                CustomSpinBox
-                                {
-                                    visible: patternCombo.displayText === "Lissajous"
-                                    Layout.fillWidth: true
-                                    from: 0
-                                    to: 360
-                                    suffix: "°"
-                                    value: efxEditor.algorithmYPhase
-                                    onValueModified: efxEditor.algorithmYPhase = value
-                                }
 
                                 // Enable/disable dimmer control. Off by default:
                                 // the EFX then animates Pan/Tilt only, as before.
@@ -1062,6 +1061,142 @@ Rectangle
                                 {
                                     label: qsTr("Fixture Order")
                                     Layout.fillWidth: true
+                                }
+                            }
+                    }
+
+                    SectionBox
+                    {
+                        id: simulationSection
+                        width: editorColumn.colWidth - 5
+                        sectionLabel: qsTr("Simulation API")
+                        sectionContents:
+                            ColumnLayout
+                            {
+                                width: parent.width
+                                spacing: 4
+
+                                // URL row
+                                RowLayout
+                                {
+                                    Layout.fillWidth: true
+                                    spacing: 4
+
+                                    RobotoText { label: qsTr("URL") }
+                                    TextField
+                                    {
+                                        id: simUrlField
+                                        Layout.fillWidth: true
+                                        placeholderText: "http://localhost:5000"
+                                        text: efxEditor.simApiUrl
+                                        onEditingFinished: efxEditor.simApiUrl = text
+                                    }
+                                }
+
+                                // Token row
+                                RowLayout
+                                {
+                                    Layout.fillWidth: true
+                                    spacing: 4
+
+                                    RobotoText { label: qsTr("Token") }
+                                    TextField
+                                    {
+                                        id: simTokenField
+                                        Layout.fillWidth: true
+                                        echoMode: TextInput.Password
+                                        placeholderText: qsTr("Bearer token (optional)")
+                                        text: efxEditor.simApiToken
+                                        onEditingFinished: efxEditor.simApiToken = text
+                                    }
+                                }
+
+                                // Connection test + save buttons
+                                RowLayout
+                                {
+                                    Layout.fillWidth: true
+                                    spacing: 4
+
+                                    GenericButton
+                                    {
+                                        Layout.fillWidth: true
+                                        height: editorColumn.itemsHeight
+                                        label: qsTr("Test Connection")
+                                        enabled: !efxEditor.simBusy && simUrlField.text.length > 0
+                                        onClicked:
+                                        {
+                                            efxEditor.simApiUrl   = simUrlField.text
+                                            efxEditor.simApiToken = simTokenField.text
+                                            efxEditor.simTestConnection()
+                                        }
+                                    }
+                                    GenericButton
+                                    {
+                                        Layout.fillWidth: true
+                                        height: editorColumn.itemsHeight
+                                        label: qsTr("Save Settings")
+                                        onClicked:
+                                        {
+                                            efxEditor.simApiUrl   = simUrlField.text
+                                            efxEditor.simApiToken = simTokenField.text
+                                            efxEditor.simSaveSettings()
+                                        }
+                                    }
+                                }
+
+                                // Status line
+                                RobotoText
+                                {
+                                    Layout.fillWidth: true
+                                    label: efxEditor.simLastStatus
+                                    labelColor: efxEditor.simLastError.length > 0 ? "tomato" : UISettings.fgMedium
+                                    visible: efxEditor.simLastStatus.length > 0
+                                    wrapText: true
+                                }
+
+                                // Scenario selector
+                                RowLayout
+                                {
+                                    Layout.fillWidth: true
+                                    spacing: 4
+
+                                    ComboBox
+                                    {
+                                        id: simScenarioCombo
+                                        Layout.fillWidth: true
+                                        model: efxEditor.simScenarios
+                                        textRole: "name"
+                                        enabled: !efxEditor.simBusy
+                                        onCurrentIndexChanged:
+                                        {
+                                            if (currentIndex >= 0 && efxEditor.simScenarios.length > 0)
+                                            {
+                                                var sc = efxEditor.simScenarios[currentIndex]
+                                                efxEditor.simFetchSpots(sc.id)
+                                            }
+                                        }
+                                    }
+                                    GenericButton
+                                    {
+                                        height: editorColumn.itemsHeight
+                                        label: qsTr("Load Scenarios")
+                                        enabled: !efxEditor.simBusy && simUrlField.text.length > 0
+                                        onClicked:
+                                        {
+                                            efxEditor.simApiUrl   = simUrlField.text
+                                            efxEditor.simApiToken = simTokenField.text
+                                            efxEditor.simFetchScenarios()
+                                        }
+                                    }
+                                }
+
+                                // Busy indicator
+                                BusyIndicator
+                                {
+                                    Layout.alignment: Qt.AlignHCenter
+                                    running: efxEditor.simBusy
+                                    visible: running
+                                    width: 32; height: 32
                                 }
                             }
                     }

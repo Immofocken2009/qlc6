@@ -1320,23 +1320,23 @@ void StageWizard::generateGroupFunctions(const FixtureGroupEntry &grp)
                 break;
             case EffectFlyOut:
                 if (grp.hasMovement)
-                    generateEFX(grp, prefix, EFX::Line2, tr("Fly Out"));
+                    generateEFX(grp, prefix, QStringLiteral("line2"), tr("Fly Out"));
                 break;
             case EffectFlyIn:
                 if (grp.hasMovement)
-                    generateEFX(grp, prefix, EFX::Line2, tr("Fly In"));
+                    generateEFX(grp, prefix, QStringLiteral("line2"), tr("Fly In"));
                 break;
             case EffectCircleChase:
                 if (grp.hasMovement)
-                    generateMovementEffect(grp, prefix, EFX::Circle, tr("Circle Chase"), AnchorCentre);
+                    generateMovementEffect(grp, prefix, QStringLiteral("circle"), tr("Circle Chase"), AnchorCentre);
                 break;
             case EffectFigureEight:
                 if (grp.hasMovement)
-                    generateMovementEffect(grp, prefix, EFX::Eight, tr("Figure Eight"), AnchorCentre);
+                    generateMovementEffect(grp, prefix, QStringLiteral("eight"), tr("Figure Eight"), AnchorCentre);
                 break;
             case EffectAudienceSweep:
                 if (grp.hasMovement)
-                    generateMovementEffect(grp, prefix, EFX::Line, tr("Audience Sweep"), AnchorAudience);
+                    generateMovementEffect(grp, prefix, QStringLiteral("line"), tr("Audience Sweep"), AnchorAudience);
                 break;
             case EffectColorRainbow:
                 if (grp.hasRGB || grp.hasCMY)

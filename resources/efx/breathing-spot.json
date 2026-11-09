@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "id": "breathing-spot",
+  "name": "Breathing Spot",
+  "version": 1,
+  "description": "Straight sweep with a dimmer that fades out and in again (keyframe track)",
+  "path": {
+    "type": "polyline",
+    "closed": true,
+    "easing": "linear",
+    "points": [
+      { "x": -1.0, "y": 0.0 },
+      { "x":  1.0, "y": 0.0 }
+    ]
+  },
+  "channels": [
+    {
+      "target": "dimmer",
+      "keys": [
+        { "t": 0.0,  "v": 1.0, "ease": "smooth" },
+        { "t": 0.5,  "v": 0.1, "ease": "smooth" },
+        { "t": 1.0,  "v": 1.0 }
+      ]
+    }
+  ]
+}

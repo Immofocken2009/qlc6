@@ -1,4 +1,4 @@
-set(module_name "qlcplus5")
+set(module_name ${APPBINARY})
 
 set(TS_FILES
     qlcplus_ca_ES.ts
@@ -25,6 +25,8 @@ set(SRC_FILES
     colorfilters.cpp colorfilters.h
     contextmanager.cpp contextmanager.h
     efxeditor.cpp efxeditor.h
+    simulationclient.cpp simulationclient.h
+    simtoefxconverter.cpp simtoefxconverter.h
     fixturebrowser.cpp fixturebrowser.h
     fixtureremapmanager.cpp fixtureremapmanager.h
     fixtureeditor/aliasedit.cpp fixtureeditor/aliasedit.h
