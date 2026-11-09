@@ -3,9 +3,17 @@
 Briefing for any session continuing this work. Language with the user: German.
 Rule from the user: implementation and feature questions go to the user (ask before deciding).
 
+## Aktuelle Basis (Stand: 2026-11-09)
+
+Basiert jetzt auf **QLC+ 5.4.0 Upstream** (mcallegari/qlcplus master, Branch `efx-2.0`).
+GitHub: https://github.com/Immofocken2009/qlc6 (Branch `efx-2.0`)
+
+**Vorgänger**: qlc6-Fork war auf QLC+ 4.14.4 Tarball-Import basiert.
+**Migration**: EFX 2.0 Änderungen (Phasen 0–8a) wurden sauber in QLC+ 5.4.0 Upstream eingebaut.
+
 ## Goal
 
-Rewrite the EFX editor/engine of QLC+ (4.14.4 master, Qt6, CMake) so that the config basis of an
+Rewrite the EFX editor/engine of QLC+ (5.4.0 Upstream, Qt6, CMake) so that the config basis of an
 EFX is a **JSON effect file**. The user wants many more effects than stock QLC+ and full freedom.
 
 Decisions made by the user:
@@ -24,7 +32,7 @@ Decisions made by the user:
 
 ## Status (see EFX-ROADMAP.md)
 
-Done and committed: phases 0-7.
+Done and committed: phases 0-8a. Basis jetzt QLC+ 5.4.0.
 - Ph1 `engine/src/efxexpression.*`, `efxeffect.*`, `efxlibrary.*`, presets in `resources/efx/*.json` (13)
 - Ph2 `EFX` core on EFXEffect (`engine/src/efx.*`), XML `<Effect Id Version><Params/><Embedded/></Effect>`
 - Ph3 `engine/src/efxpath.*` (Bezier/polyline paths, `EFXPath::setPoints/toJson` ready for the visual editor)
@@ -55,14 +63,25 @@ Then: write the generator prompt, run the full qmlui build, call the advisor bef
   qlcfixturedefcache, qlci18n, qlcinputprofile, rgbscript: no IO plugins, root user, no translations).
 
 ## Build and test
-Build dir `/opt/qlc5/build` (cmake `-Dqmlui=ON`, Qt 6.4.2 via apt). Build only what you need, e.g.
-`cd build && make -j1 efx_test`. Run a test from its source dir:
+Build-Quelle: `/home/immo/qlc5_adons` (Branch `efx-2.0`).
+Build-Server: `192.168.10.27` (Ubuntu 24.04, Qt 6.4.2 via apt).
+Build-Dir: z.B. `/root/qlc6-build` (cmake `-Dqlc6=on -Dqmlui=on`).
 
-    cd engine/test/efx && QT_QPA_PLATFORM=offscreen LD_LIBRARY_PATH=/opt/qlc5/build/engine/src \
-        /opt/qlc5/build/engine/test/efx/efx_test
+    mkdir /root/qlc6-build && cd /root/qlc6-build
+    cmake -Dqlc6=on -Dqmlui=on -DCMAKE_BUILD_TYPE=Debug /home/immo/qlc5_adons
+    make -j4 qlcplusengine6   # Engine-Lib
+    make -j1 efx_test         # EFX unit tests
+
+Run a test from its source dir:
+
+    cd engine/test/efx && QT_QPA_PLATFORM=offscreen LD_LIBRARY_PATH=/root/qlc6-build/engine/src \
+        /root/qlc6-build/engine/test/efx/efx_test
 
 Relevant tests: `efxeffect` (24), `efx` (34, 1 skip), `efxfixture` (25), `efx_golden`.
 Compiler uses -Werror (unused variables fail the build).
+
+**WICHTIG cmake-Gotcha**: `-Dqlc6=on -Dqmlui=on` (beide Flags nötig!).
+CMakeLists.txt prüft `if(qmlui)` BEVOR `variables.cmake` includiert wird.
 
 ## Gotchas
 - `emit` is a macro in Qt. `Universe::preGMValues()` are signed chars (cast to uchar).
