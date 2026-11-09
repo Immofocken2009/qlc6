@@ -58,6 +58,18 @@
 [![YouTube (v5)](https://img.shields.io/badge/YouTube%20(v5)-%23FF0000.svg?style=flat-square&logo=YouTube)](https://www.youtube.com/playlist?list=PLHT-wIriuitBQo0DKX9YgWVmS6LsEErE_) 
 [![Facebook](https://img.shields.io/badge/Facebook-%231877F2.svg?style=flat-square&logo=Facebook)](https://www.facebook.com/qlcplus)
 
+## EFX 2.0 (this fork)
+
+This fork rewrites the EFX engine and editor. An EFX is now based on a **JSON effect file** instead of a fixed list of algorithms.
+
+- **Effect model:** formulas, keyframes, Bezier paths and arbitrary channels (dimmer, colour, gobo, raw channels, 16 bit). Pan/Tilt transform (width, height, rotation, offset, fade-in) stays in the engine.
+- **Effect library:** a folder of `.json` files (system directory + user directory, hot reload). Projects reference effects by id and embed a fallback copy. 13 presets live in `resources/efx/`.
+- **QML editor (`qmlui`):** effect picker with parameter controls generated from the effect. The shape editor (*Edit shape...*) turns any shape into editable points: move points and Bezier handles, add points, draw freehand paths. Saving creates a new user effect; presets are never overwritten.
+- **Upload API:** `POST /api/v1/effects` and `PUT /api/v1/effects/<id>` in the web server let an external generator add effects (upload only, 2 MB limit, no authentication of its own).
+- **Not supported:** the old Widgets UI (`ui/`) is not maintained for the new EFX and no longer compiles. Old XML EFX without `<Effect>` are not converted and load as "circle".
+
+Details: [EFX-JSON-DESIGN.md](EFX-JSON-DESIGN.md) (JSON schema, expression language, upload API) and [EFX-ROADMAP.md](EFX-ROADMAP.md) (phases and status).
+
 ## Support & bug reports
 
 We have a dedicated page to help you find support, please check out [SUPPORT.md](SUPPORT.md). To learn about a specific feature of QLC+, take a look at the [official documentation](https://docs.qlcplus.org/). To give feedback, submit new fixtures and get new ideas, go to the [forum](https://www.qlcplus.org/forum/index.php)
