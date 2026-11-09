@@ -39,6 +39,8 @@ set(SRC_FILES
     folderbrowser.cpp folderbrowser.h
     functioneditor.cpp functioneditor.h
     functionmanager.cpp functionmanager.h
+    simulationclient.cpp simulationclient.h
+    simtoefxconverter.cpp simtoefxconverter.h
     importmanager.cpp importmanager.h
     inputoutputmanager.cpp inputoutputmanager.h
     inputprofileeditor.cpp inputprofileeditor.h
