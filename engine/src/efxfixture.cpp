@@ -459,7 +459,7 @@ void EFXFixture::start(QSharedPointer<GenericFader> fader)
     m_bindings = resolveBindings(m_boundEffect, fxi, head().head);
 
     /* Fine channels that are not next to their coarse channel cannot be combined */
-    for (const ChannelBinding& b : qAsConst(m_bindings))
+    for (const ChannelBinding& b : std::as_const(m_bindings))
     {
         if (b.lsb != QLCChannel::invalid() && b.lsb - b.msb != 1)
             fader->setHandleSecondary(false);
@@ -807,7 +807,7 @@ void EFXFixture::setPointChannels(QList<Universe *> universes, QSharedPointer<Ge
 
     Universe *uni = universes[universe()];
 
-    for (const ChannelBinding& b : qAsConst(m_bindings))
+    for (const ChannelBinding& b : std::as_const(m_bindings))
     {
         if (b.effectChannel >= m_values.size())
             continue;

@@ -96,6 +96,7 @@ Depends:
  ${misc:Depends},
 Description: Debugging symbols for Q Light Controller Plus 5
  Q Light Controller Plus 5 debugging symbols.
+
 Package: qlcplus6
 Section: misc
 Architecture: any
