@@ -49,6 +49,8 @@ private slots:
     void pathOpenAndPolyline();
     void pathRejectBad();
     void pathEffect();
+    void pathFromStroke();
+    void formulaToPath();
     void legacyParity();
 };
 

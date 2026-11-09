@@ -644,7 +644,27 @@ Rectangle
                                     textRole: ""
                                     model: efxEditor.algorithms
                                     currentIndex: efxEditor.algorithmIndex
+                                    enabled: !efxEditor.pathEditing
                                     onCurrentIndexChanged: efxEditor.algorithmIndex = currentIndex
+                                }
+
+                                // shape editing
+                                GenericButton
+                                {
+                                    Layout.columnSpan: 2
+                                    Layout.fillWidth: true
+                                    height: editorColumn.itemsHeight
+                                    visible: !efxEditor.pathEditing
+                                    label: qsTr("Edit shape...")
+                                    onClicked: efxEditor.beginPathEdit()
+                                }
+                                Loader
+                                {
+                                    Layout.columnSpan: 2
+                                    Layout.fillWidth: true
+                                    active: efxEditor.pathEditing
+                                    visible: active
+                                    source: "qrc:/EFXPathEditor.qml"
                                 }
 
                                 // row 2

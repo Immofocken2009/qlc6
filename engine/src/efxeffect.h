@@ -23,6 +23,9 @@
 #include <QString>
 #include <QVector>
 #include <QList>
+#include <QJsonObject>
+#include <QPointF>
+#include <QVector>
 
 #include "efxexpression.h"
 #include "efxpath.h"
@@ -140,6 +143,21 @@ public:
     /** Convenience: pan/tilt pair (both -1..1). Returns false if the effect has no pan or tilt. */
     bool evaluatePanTilt(double theta, double fixtureIndex, double fixtureCount, double head,
                          const QVector<double>& params, double *pan, double *tilt) const;
+
+    /**
+     * Sample the pan/tilt curve over one cycle: @a count points at t = i/count
+     * (fixture 0 of 1, head 0). Empty if the effect has no pan/tilt.
+     */
+    QVector<QPointF> samplePanTilt(const QVector<double>& params, int count) const;
+
+    /**
+     * A copy of this effect whose pan/tilt comes from @a pathObject (an object as written by
+     * EFXPath::toJson()), stored under a new @a id and @a name. Pan/tilt channels and the
+     * reverse expression are dropped; other channels stay, as do the parameters they use.
+     * @return the new effect JSON, or an empty array and @a error set
+     */
+    QByteArray withPath(const QJsonObject& pathObject, const QString& id, const QString& name,
+                        QString *error = nullptr) const;
 
     /** Names of variables that precede the parameters in the evaluation array. */
     static QStringList builtinVariables();

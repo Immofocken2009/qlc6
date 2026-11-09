@@ -22,6 +22,7 @@
 
 #include "functioneditor.h"
 #include "treemodel.h"
+#include "efxeffect.h"
 
 class Doc;
 class EFX;
@@ -56,6 +57,10 @@ class EFXEditor final : public FunctionEditor
 
     Q_PROPERTY(QVariantList algorithmData READ algorithmData NOTIFY algorithmDataChanged)
     Q_PROPERTY(QVariantList fixturesData READ fixturesData WRITE setFixturesData NOTIFY fixturesDataChanged)
+
+    Q_PROPERTY(bool pathEditing READ pathEditing NOTIFY pathEditingChanged)
+    Q_PROPERTY(QVariantList pathPoints READ pathPoints NOTIFY pathPointsChanged)
+    Q_PROPERTY(bool pathClosed READ pathClosed WRITE setPathClosed NOTIFY pathPointsChanged)
 
 public:
     EFXEditor(QQuickView *view, Doc *doc, QObject *parent = 0);
@@ -230,6 +235,67 @@ private:
 signals:
     void algorithmDataChanged();
     void fixturesDataChanged();
+
+    /************************************************************************
+     * Shape (path) editing
+     ************************************************************************/
+public:
+    /** True while a shape is being edited (not saved yet) */
+    bool pathEditing() const;
+
+    /** The points of the shape being edited, in the -1..1 pan/tilt space. One map per
+     *  point: x, y (anchor), ix, iy (incoming handle), ox, oy (outgoing handle) and
+     *  corner (true when both handles sit on the anchor) */
+    QVariantList pathPoints() const;
+
+    bool pathClosed() const;
+    void setPathClosed(bool closed);
+
+    /** Start editing the current effect as a path. Formula effects are converted to points
+     *  (the original stays untouched). @return false if there is nothing to edit */
+    Q_INVOKABLE bool beginPathEdit();
+
+    /** Throw the changes away and go back to the effect that was selected before */
+    Q_INVOKABLE void cancelPathEdit();
+
+    /** Save the edited shape as a new user effect named @a name and select it.
+     *  @return an empty string on success, otherwise an error message */
+    Q_INVOKABLE QString commitPathEdit(const QString &name);
+
+    /** Move an anchor; its handles move with it */
+    Q_INVOKABLE void movePathPoint(int index, qreal x, qreal y);
+
+    /** Move one handle of an anchor. With @a mirror the opposite handle follows symmetrically */
+    Q_INVOKABLE void movePathHandle(int index, bool outgoing, qreal x, qreal y, bool mirror);
+
+    /** Add a point at (x, y): on the path it splits the nearest segment (the shape is kept),
+     *  away from the path it is appended to an open path. @return the index of the new point */
+    Q_INVOKABLE int insertPathPoint(qreal x, qreal y);
+
+    /** Remove a point (a path keeps at least 2) */
+    Q_INVOKABLE void deletePathPoint(int index);
+
+    /** Make a point a sharp corner, or smooth it with automatic handles */
+    Q_INVOKABLE void setPathPointCorner(int index, bool corner);
+
+    /** Replace the shape with a freehand stroke: a flat list x0, y0, x1, y1... */
+    Q_INVOKABLE void setPathStroke(const QVariantList &xy);
+
+signals:
+    void pathEditingChanged();
+    void pathPointsChanged();
+
+private:
+    /** Rebuild the previewed effect from the draft points */
+    void applyPathDraft();
+    void autoHandles(int index);
+
+private:
+    bool m_pathEditing;
+    QVector<EFXPathPoint> m_draftPoints;
+    bool m_draftClosed;
+    EFXPath::Easing m_draftEasing;
+    EFXEffectPtr m_draftOrigin;
 
 private:
     /** EFX algorithm data exchanged with the QML world */

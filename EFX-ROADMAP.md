@@ -10,6 +10,9 @@
 - [x] Phase 6  Library hot reload (QFileSystemWatcher)
 - [x] Phase 7  Built-in HTTP API server for uploading effects from an external generator
                (user request, project independent library)
+- [~] Phase 8a done: pan/tilt shape editor (EFXPathEditor.qml, move/add points/freehand,
+               formula shapes are sampled to Bezier, saved as NEW user effect `user-<name>`).
+               Phase 8b open: floor points (needs fixture positions).
 - [ ] Phase 8  Visual effect authoring in the QML editor (user request):
                - draw own paths / waypoints, e.g. points on the stage floor that the heads
                  sweep through (floor point -> pan/tilt per fixture)

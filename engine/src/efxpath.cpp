@@ -98,6 +98,120 @@ bool EFXPath::fromJson(const QJsonObject& obj, QString *error)
     return setPoints(points, obj.value("closed").toBool(false), type == "bezier", e, error);
 }
 
+static void simplifyRange(const QVector<QPointF>& pts, int first, int last, double tol,
+                          QVector<bool>& keep)
+{
+    if (last <= first + 1)
+        return;
+
+    const QPointF a = pts.at(first), b = pts.at(last);
+    const double dx = b.x() - a.x(), dy = b.y() - a.y();
+    const double len = std::hypot(dx, dy);
+    double maxDist = -1;
+    int index = -1;
+    for (int i = first + 1; i < last; i++)
+    {
+        const QPointF p = pts.at(i);
+        const double d = len > 0.0 ? std::fabs(dy * (p.x() - a.x()) - dx * (p.y() - a.y())) / len
+                                   : std::hypot(p.x() - a.x(), p.y() - a.y());
+        if (d > maxDist)
+        {
+            maxDist = d;
+            index = i;
+        }
+    }
+    if (maxDist > tol)
+    {
+        keep[index] = true;
+        simplifyRange(pts, first, index, tol, keep);
+        simplifyRange(pts, index, last, tol, keep);
+    }
+}
+
+QVector<EFXPathPoint> EFXPath::fromStroke(const QVector<QPointF>& stroke, double tolerance,
+                                          bool closed, double cornerAngle)
+{
+    QVector<EFXPathPoint> result;
+
+    // drop non finite and consecutive duplicate samples
+    QVector<QPointF> pts;
+    for (const QPointF& p : stroke)
+    {
+        if (!std::isfinite(p.x()) || !std::isfinite(p.y()))
+            continue;
+        if (!pts.isEmpty() && std::hypot(p.x() - pts.last().x(), p.y() - pts.last().y()) < 1e-6)
+            continue;
+        pts << p;
+    }
+    if (closed && pts.size() > 2 &&
+        std::hypot(pts.first().x() - pts.last().x(), pts.first().y() - pts.last().y()) < 1e-6)
+        pts.removeLast();
+    if (pts.size() < 2)
+        return result;
+
+    // for a closed curve the start point is simplified against itself
+    if (closed)
+        pts << pts.first();
+
+    QVector<bool> keep(pts.size(), false);
+    keep[0] = keep[pts.size() - 1] = true;
+    simplifyRange(pts, 0, pts.size() - 1, qMax(tolerance, 1e-6), keep);
+
+    QVector<QPointF> kept;
+    for (int i = 0; i < pts.size(); i++)
+        if (keep[i])
+            kept << pts.at(i);
+    if (closed)
+        kept.removeLast();
+    if (kept.size() > MaxPoints)
+        kept.resize(MaxPoints);
+    if (kept.size() < 2)
+        return result;
+
+    const int n = kept.size();
+    const double cornerCos = std::cos(qDegreesToRadians(cornerAngle));
+    for (int i = 0; i < n; i++)
+    {
+        EFXPathPoint pp;
+        pp.pos = pp.in = pp.out = kept.at(i);
+
+        const bool hasPrev = closed || i > 0;
+        const bool hasNext = closed || i < n - 1;
+        const QPointF prev = kept.at((i + n - 1) % n);
+        const QPointF next = kept.at((i + 1) % n);
+        const QPointF dPrev = pp.pos - prev, dNext = next - pp.pos;
+        const double lPrev = std::hypot(dPrev.x(), dPrev.y());
+        const double lNext = std::hypot(dNext.x(), dNext.y());
+
+        if (hasPrev && hasNext && lPrev > 0 && lNext > 0)
+        {
+            const double cosTurn = (dPrev.x() * dNext.x() + dPrev.y() * dNext.y()) / (lPrev * lNext);
+            if (cosTurn >= cornerCos) // gentle turn: smooth point
+            {
+                QPointF dir = next - prev;
+                const double l = std::hypot(dir.x(), dir.y());
+                if (l > 0)
+                {
+                    dir /= l;
+                    pp.out = pp.pos + dir * (lNext / 3.0);
+                    pp.in = pp.pos - dir * (lPrev / 3.0);
+                }
+            }
+        }
+        else if (hasNext && lNext > 0 && !hasPrev)
+        {
+            pp.out = pp.pos + dNext / 3.0;
+        }
+        else if (hasPrev && lPrev > 0 && !hasNext)
+        {
+            pp.in = pp.pos - dPrev / 3.0;
+        }
+        result << pp;
+    }
+
+    return result;
+}
+
 bool EFXPath::setPoints(const QVector<EFXPathPoint>& points, bool closed, bool bezier,
                         Easing easing, QString *error)
 {

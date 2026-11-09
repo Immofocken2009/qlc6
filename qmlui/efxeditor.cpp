@@ -18,6 +18,7 @@
 */
 
 #include <QTimer>
+#include <QRegularExpression>
 #include <QDebug>
 #include <QQmlEngine>
 #include <QRandomGenerator>
@@ -28,6 +29,7 @@
 #include "listmodel.h"
 #include "tardis.h"
 #include "efxlibrary.h"
+#include "efxpath.h"
 #include "efx.h"
 #include "doc.h"
 #include "app.h"
@@ -38,6 +40,9 @@ EFXEditor::EFXEditor(QQuickView *view, Doc *doc, QObject *parent)
     , m_fixtureTree(nullptr)
     , m_maxPanDegrees(360.0)
     , m_maxTiltDegrees(270.0)
+    , m_pathEditing(false)
+    , m_draftClosed(true)
+    , m_draftEasing(EFXPath::ConstantSpeed)
 {
     m_editorObjectName = "efxEditorRoot";
 
@@ -76,6 +81,9 @@ void EFXEditor::refreshEffectList()
 
 void EFXEditor::setFunctionID(quint32 id)
 {
+    if (m_pathEditing)
+        cancelPathEdit();
+
     if (id == Function::invalidId())
     {
         disconnect(m_efx, &EFX::attributeChanged, this, &EFXEditor::slotAttributeChanged);
@@ -809,4 +817,346 @@ void EFXEditor::updateAlgorithmData()
 
     emit algorithmDataChanged();
     emit fixturesDataChanged();
+}
+
+/************************************************************************
+ * Shape (path) editing
+ ************************************************************************/
+
+static const double PathLimit = 3.0; // keep anchors and handles in a sane area
+
+static QPointF clampPoint(const QPointF &p)
+{
+    return QPointF(qBound(-PathLimit, p.x(), PathLimit), qBound(-PathLimit, p.y(), PathLimit));
+}
+
+bool EFXEditor::pathEditing() const
+{
+    return m_pathEditing;
+}
+
+QVariantList EFXEditor::pathPoints() const
+{
+    QVariantList list;
+    for (const EFXPathPoint &p : m_draftPoints)
+    {
+        QVariantMap m;
+        m["x"] = p.pos.x();
+        m["y"] = p.pos.y();
+        m["ix"] = p.in.x();
+        m["iy"] = p.in.y();
+        m["ox"] = p.out.x();
+        m["oy"] = p.out.y();
+        m["corner"] = (p.in == p.pos && p.out == p.pos);
+        list << m;
+    }
+    return list;
+}
+
+bool EFXEditor::pathClosed() const
+{
+    return m_draftClosed;
+}
+
+void EFXEditor::setPathClosed(bool closed)
+{
+    if (!m_pathEditing || closed == m_draftClosed)
+        return;
+
+    m_draftClosed = closed;
+    applyPathDraft();
+}
+
+bool EFXEditor::beginPathEdit()
+{
+    if (m_efx == nullptr || m_pathEditing)
+        return false;
+
+    EFXEffectPtr fx = m_efx->effect();
+    if (fx.isNull() || !fx->hasPanTilt())
+        return false;
+
+    if (fx->hasPath())
+    {
+        m_draftPoints = fx->path().points();
+        m_draftClosed = fx->path().isClosed();
+        m_draftEasing = fx->path().easing();
+        if (!fx->path().isBezier())
+        {
+            // a polyline is a path of corners
+            for (EFXPathPoint &p : m_draftPoints)
+                p.in = p.out = p.pos;
+        }
+    }
+    else
+    {
+        // formula effect: sample one cycle and fit a few points to it
+        QVector<double> params;
+        for (const EFXParam &p : fx->params())
+            params << m_efx->effectParam(p.id);
+        const QVector<QPointF> samples = fx->samplePanTilt(params, 256);
+        m_draftPoints = EFXPath::fromStroke(samples, 0.01, true);
+        m_draftClosed = true;
+        m_draftEasing = EFXPath::ConstantSpeed;
+    }
+
+    if (m_draftPoints.size() < 2)
+        return false;
+
+    m_draftOrigin = fx;
+    m_pathEditing = true;
+    emit pathEditingChanged();
+    applyPathDraft();
+    return true;
+}
+
+void EFXEditor::cancelPathEdit()
+{
+    if (!m_pathEditing)
+        return;
+
+    m_pathEditing = false;
+    m_draftPoints.clear();
+    if (m_efx != nullptr && !m_draftOrigin.isNull())
+        m_efx->setEffect(m_draftOrigin);
+    m_draftOrigin.clear();
+
+    emit pathEditingChanged();
+    emit pathPointsChanged();
+    emit algorithmIndexChanged();
+    emit effectParamsChanged();
+    updateAlgorithmData();
+}
+
+QString EFXEditor::commitPathEdit(const QString &name)
+{
+    if (!m_pathEditing || m_efx == nullptr || m_draftOrigin.isNull())
+        return tr("Nothing to save");
+
+    const QString title = name.trimmed().isEmpty() ? tr("My shape") : name.trimmed();
+
+    // build a unique, file name safe id: user-<slug>[-n]
+    QString slug = title.toLower();
+    slug.replace(QRegularExpression("[^a-z0-9]+"), "-");
+    slug.remove(QRegularExpression("^-+|-+$"));
+    if (slug.isEmpty())
+        slug = "shape";
+    slug = slug.left(40);
+
+    EFXLibrary *lib = EFXLibrary::instance();
+    QString id = "user-" + slug;
+    for (int n = 2; !lib->effect(id).isNull() && n < 1000; n++)
+        id = QString("user-%1-%2").arg(slug).arg(n);
+
+    EFXPath path;
+    QString error;
+    if (!path.setPoints(m_draftPoints, m_draftClosed, true, m_draftEasing, &error))
+        return error;
+
+    const QByteArray json = m_draftOrigin->withPath(path.toJson(), id, title, &error);
+    if (json.isEmpty())
+        return error;
+
+    const QString oldId = m_draftOrigin->id();
+    QString savedId;
+    if (!lib->addUserEffect(json, &error, &savedId))
+        return error; // still editing, nothing was saved
+
+    m_pathEditing = false;
+    m_draftPoints.clear();
+    m_draftOrigin.clear();
+
+    m_efx->setEffect(savedId);
+    Tardis::instance()->enqueueAction(Tardis::EFXSetEffect, m_efx->id(), oldId, savedId);
+
+    emit pathEditingChanged();
+    emit pathPointsChanged();
+    emit algorithmIndexChanged();
+    emit effectParamsChanged();
+    updateAlgorithmData();
+    return QString();
+}
+
+void EFXEditor::applyPathDraft()
+{
+    if (!m_pathEditing || m_efx == nullptr || m_draftOrigin.isNull())
+        return;
+
+    EFXPath path;
+    if (path.setPoints(m_draftPoints, m_draftClosed, true, m_draftEasing))
+    {
+        const QByteArray json = m_draftOrigin->withPath(path.toJson(), "efx-draft", tr("Edited shape"));
+        EFXEffectPtr fx = EFXEffect::fromJson(json);
+        if (!fx.isNull())
+            m_efx->setEffect(fx);
+    }
+
+    emit pathPointsChanged();
+    emit effectParamsChanged();
+    updateAlgorithmData();
+}
+
+void EFXEditor::movePathPoint(int index, qreal x, qreal y)
+{
+    if (!m_pathEditing || index < 0 || index >= m_draftPoints.size())
+        return;
+
+    EFXPathPoint &p = m_draftPoints[index];
+    const QPointF np = clampPoint(QPointF(x, y));
+    const QPointF delta = np - p.pos;
+    p.pos = np;
+    p.in = clampPoint(p.in + delta);
+    p.out = clampPoint(p.out + delta);
+    applyPathDraft();
+}
+
+void EFXEditor::movePathHandle(int index, bool outgoing, qreal x, qreal y, bool mirror)
+{
+    if (!m_pathEditing || index < 0 || index >= m_draftPoints.size())
+        return;
+
+    EFXPathPoint &p = m_draftPoints[index];
+    const QPointF h = clampPoint(QPointF(x, y));
+    const QPointF other = clampPoint(p.pos * 2.0 - h);
+    if (outgoing)
+    {
+        p.out = h;
+        if (mirror)
+            p.in = other;
+    }
+    else
+    {
+        p.in = h;
+        if (mirror)
+            p.out = other;
+    }
+    applyPathDraft();
+}
+
+int EFXEditor::insertPathPoint(qreal x, qreal y)
+{
+    if (!m_pathEditing || m_draftPoints.size() >= EFXPath::MaxPoints)
+        return -1;
+
+    const QPointF click = clampPoint(QPointF(x, y));
+    const int n = m_draftPoints.size();
+    const int segments = m_draftClosed ? n : n - 1;
+
+    // find the nearest point on the curve
+    const int steps = 48;
+    double best = 1e9, bestU = 0;
+    int bestSeg = 0;
+    for (int s = 0; s < segments; s++)
+    {
+        const EFXPathPoint &a = m_draftPoints.at(s);
+        const EFXPathPoint &b = m_draftPoints.at((s + 1) % n);
+        for (int k = 0; k <= steps; k++)
+        {
+            const double u = double(k) / steps, v = 1.0 - u;
+            const QPointF c = a.pos * (v * v * v) + a.out * (3 * v * v * u) +
+                              b.in * (3 * v * u * u) + b.pos * (u * u * u);
+            const double d = std::hypot(c.x() - click.x(), c.y() - click.y());
+            if (d < best)
+            {
+                best = d;
+                bestU = u;
+                bestSeg = s;
+            }
+        }
+    }
+
+    // away from the curve of an open path: append a corner at the click position
+    if (!m_draftClosed && best > 0.08)
+    {
+        EFXPathPoint np;
+        np.pos = np.in = np.out = click;
+        m_draftPoints.append(np);
+        applyPathDraft();
+        return m_draftPoints.size() - 1;
+    }
+
+    // split the segment at bestU (de Casteljau), the shape does not change
+    EFXPathPoint &a = m_draftPoints[bestSeg];
+    EFXPathPoint &b = m_draftPoints[(bestSeg + 1) % n];
+    const double u = bestU;
+    auto lerp = [u](const QPointF &p, const QPointF &q) { return p + (q - p) * u; };
+    const QPointF q0 = lerp(a.pos, a.out), q1 = lerp(a.out, b.in), q2 = lerp(b.in, b.pos);
+    const QPointF r0 = lerp(q0, q1), r1 = lerp(q1, q2);
+    EFXPathPoint np;
+    np.pos = lerp(r0, r1);
+    np.in = r0;
+    np.out = r1;
+    a.out = q0;
+    b.in = q2;
+
+    const int at = bestSeg + 1;
+    m_draftPoints.insert(at, np);
+    applyPathDraft();
+    return at;
+}
+
+void EFXEditor::deletePathPoint(int index)
+{
+    if (!m_pathEditing || index < 0 || index >= m_draftPoints.size() || m_draftPoints.size() <= 2)
+        return;
+
+    m_draftPoints.remove(index);
+    applyPathDraft();
+}
+
+void EFXEditor::autoHandles(int index)
+{
+    const int n = m_draftPoints.size();
+    EFXPathPoint &p = m_draftPoints[index];
+    const bool hasPrev = m_draftClosed || index > 0;
+    const bool hasNext = m_draftClosed || index < n - 1;
+    const QPointF prev = m_draftPoints.at((index + n - 1) % n).pos;
+    const QPointF next = m_draftPoints.at((index + 1) % n).pos;
+
+    QPointF dir = hasPrev && hasNext ? next - prev : (hasNext ? next - p.pos : p.pos - prev);
+    const double l = std::hypot(dir.x(), dir.y());
+    if (l <= 0)
+        return;
+    dir /= l;
+
+    const double lPrev = hasPrev ? std::hypot(p.pos.x() - prev.x(), p.pos.y() - prev.y()) : 0;
+    const double lNext = hasNext ? std::hypot(next.x() - p.pos.x(), next.y() - p.pos.y()) : 0;
+    p.out = hasNext ? clampPoint(p.pos + dir * (lNext / 3.0)) : p.pos;
+    p.in = hasPrev ? clampPoint(p.pos - dir * (lPrev / 3.0)) : p.pos;
+}
+
+void EFXEditor::setPathPointCorner(int index, bool corner)
+{
+    if (!m_pathEditing || index < 0 || index >= m_draftPoints.size())
+        return;
+
+    if (corner)
+        m_draftPoints[index].in = m_draftPoints[index].out = m_draftPoints[index].pos;
+    else
+        autoHandles(index);
+    applyPathDraft();
+}
+
+void EFXEditor::setPathStroke(const QVariantList &xy)
+{
+    if (!m_pathEditing)
+        return;
+
+    QVector<QPointF> stroke;
+    for (int i = 0; i + 1 < xy.size(); i += 2)
+        stroke << clampPoint(QPointF(xy.at(i).toDouble(), xy.at(i + 1).toDouble()));
+    if (stroke.size() < 4)
+        return;
+
+    // a stroke that ends near its start is a closed shape
+    const QPointF d = stroke.last() - stroke.first();
+    const bool closed = stroke.size() >= 8 && std::hypot(d.x(), d.y()) < 0.15;
+
+    const QVector<EFXPathPoint> pts = EFXPath::fromStroke(stroke, 0.03, closed);
+    if (pts.size() < 2)
+        return;
+
+    m_draftPoints = pts;
+    m_draftClosed = closed;
+    applyPathDraft();
 }

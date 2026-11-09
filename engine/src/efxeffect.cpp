@@ -427,3 +427,77 @@ bool EFXEffect::evaluatePanTilt(double theta, double fixtureIndex, double fixtur
     *tilt = tc.isKeyframed() ? evaluateKeys(tc.keys, t) : tc.expr.evaluate(vars.constData());
     return true;
 }
+
+QVector<QPointF> EFXEffect::samplePanTilt(const QVector<double>& params, int count) const
+{
+    QVector<QPointF> out;
+    if (!hasPanTilt() || count < 2)
+        return out;
+
+    out.reserve(count);
+    for (int i = 0; i < count; i++)
+    {
+        double pan = 0, tilt = 0;
+        evaluatePanTilt(2.0 * M_PI * i / count, 0, 1, 0, params, &pan, &tilt);
+        out << QPointF(qBound(-1.0, pan, 1.0), qBound(-1.0, tilt, 1.0));
+    }
+    return out;
+}
+
+QByteArray EFXEffect::withPath(const QJsonObject& pathObject, const QString& id, const QString& name,
+                               QString *error) const
+{
+    QJsonObject root = QJsonDocument::fromJson(m_json).object();
+    const bool hadPath = root.contains("path");
+
+    // keep everything except pan/tilt, which now come from the path
+    QJsonArray channels;
+    const QJsonArray old = root.value("channels").toArray();
+    for (const QJsonValue& v : old)
+    {
+        const QString target = v.toObject().value("target").toString().toLower();
+        if (target == "pan" || target == "tilt")
+            continue;
+        channels << v;
+    }
+    if (channels.isEmpty())
+        root.remove("channels");
+    else
+        root.insert("channels", channels);
+
+    if (!hadPath)
+    {
+        root.remove("reverse");
+
+        // keep only parameters that the remaining channels still use
+        const QByteArray used = QJsonDocument(channels).toJson(QJsonDocument::Compact);
+        QJsonArray params;
+        const QJsonArray oldParams = root.value("params").toArray();
+        for (const QJsonValue& v : oldParams)
+        {
+            const QString pid = v.toObject().value("id").toString();
+            const QRegularExpression re(QStringLiteral("(?<![A-Za-z0-9_])%1(?![A-Za-z0-9_])")
+                                        .arg(QRegularExpression::escape(pid)));
+            if (re.match(QString::fromUtf8(used)).hasMatch())
+                params << v;
+        }
+        if (params.isEmpty())
+            root.remove("params");
+        else
+            root.insert("params", params);
+    }
+
+    root.insert("path", pathObject);
+    root.insert("id", id);
+    root.insert("name", name);
+    root.insert("version", 1);
+
+    const QByteArray json = QJsonDocument(root).toJson(QJsonDocument::Indented);
+    QString err;
+    if (fromJson(json, &err).isNull())
+    {
+        setError(error, err);
+        return QByteArray();
+    }
+    return json;
+}

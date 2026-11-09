@@ -62,6 +62,16 @@ public:
     /** Serialise to the "path" object (the inverse of fromJson()). */
     QJsonObject toJson() const;
 
+    /**
+     * Turn a drawn stroke (or densely sampled curve) into a few path points:
+     * Ramer-Douglas-Peucker simplification with @a tolerance (pan/tilt units),
+     * then smooth Bezier handles. Sharp turns (more than @a cornerAngle degrees)
+     * stay corners (in == out == pos). Used for freehand drawing and for
+     * converting formula effects into editable paths.
+     */
+    static QVector<EFXPathPoint> fromStroke(const QVector<QPointF>& stroke, double tolerance,
+                                            bool closed, double cornerAngle = 50.0);
+
     /** Build a path directly (used by the visual editor). */
     bool setPoints(const QVector<EFXPathPoint>& points, bool closed, bool bezier,
                    Easing easing, QString *error = nullptr);

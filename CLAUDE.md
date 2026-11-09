@@ -34,7 +34,9 @@ Done and committed: phases 0-7.
 - Ph7 `webaccess/src/webaccessbase.cpp`: `POST /api/v1/effects`, `PUT /api/v1/effects/<id>` (upload only,
   no auth of its own, 2 MB limit); `qhttpserver` now waits for the body on PUT too
 
-**Open: Phase 8** (visual authoring). Open question for the user: fixture positions and pan/tilt ranges for
+**Phase 8a done** (uncompiled QML, only syntax-linted): `qmlui/qml/fixturesfunctions/EFXPathEditor.qml`, `EFXEditor` C++ path-edit API
+(`beginPathEdit/commitPathEdit/...`), `EFXPath::fromStroke`, `EFXEffect::samplePanTilt/withPath`.
+**Open: Phase 8b** (floor points). Open question for the user: fixture positions and pan/tilt ranges for
 aiming heads at floor points (3D/monitor positions?). Ask before designing. Ideas: path editor canvas with
 Bezier handles in EFXPreview/EFXEditor, "save as library effect" via `EFXLibrary::addUserEffect`, edit params
 of imported effects, duplicate system effects into user dir.

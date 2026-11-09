@@ -655,3 +655,89 @@ void EFXEffect_Test::legacyParity()
 }
 
 QTEST_GUILESS_MAIN(EFXEffect_Test)
+
+void EFXEffect_Test::pathFromStroke()
+{
+    // a straight stroke collapses to its end points
+    QVector<QPointF> line;
+    for (int i = 0; i <= 50; i++)
+        line << QPointF(-1 + i * 0.04, 0.0);
+    QVector<EFXPathPoint> pts = EFXPath::fromStroke(line, 0.01, false);
+    QCOMPARE(pts.size(), 2);
+    QVERIFY(near(pts.first().pos.x(), -1) && near(pts.last().pos.x(), 1));
+
+    // a square outline keeps its four corners as corners
+    QVector<QPointF> sq;
+    for (int i = 0; i < 20; i++) sq << QPointF(-1 + i * 0.1, -1);
+    for (int i = 0; i < 20; i++) sq << QPointF(1, -1 + i * 0.1);
+    for (int i = 0; i < 20; i++) sq << QPointF(1 - i * 0.1, 1);
+    for (int i = 0; i < 20; i++) sq << QPointF(-1, 1 - i * 0.1);
+    pts = EFXPath::fromStroke(sq, 0.02, true);
+    QCOMPARE(pts.size(), 4);
+    for (const EFXPathPoint& p : pts)
+        QVERIFY(p.in == p.pos && p.out == p.pos);
+
+    // a circle stays smooth and is close to the original
+    QVector<QPointF> circ;
+    for (int i = 0; i < 128; i++)
+        circ << QPointF(cos(2 * M_PI * i / 128), sin(2 * M_PI * i / 128));
+    pts = EFXPath::fromStroke(circ, 0.01, true);
+    QVERIFY(pts.size() >= 6 && pts.size() < 40);
+    EFXPath path;
+    QVERIFY(path.setPoints(pts, true, true, EFXPath::ConstantSpeed));
+    for (int i = 0; i < 40; i++)
+    {
+        const QPointF p = path.evaluate(i / 40.0);
+        QVERIFY(qAbs(std::hypot(p.x(), p.y()) - 1.0) < 0.05);
+    }
+
+    // garbage in, nothing out
+    QVERIFY(EFXPath::fromStroke(QVector<QPointF>() << QPointF(0, 0), 0.01, false).isEmpty());
+}
+
+void EFXEffect_Test::formulaToPath()
+{
+    EFXLibrary lib;
+    QVERIFY(lib.load(QDir(EFX_PRESET_DIR), false) > 0);
+
+    EFXEffectPtr circle = lib.effect("circle");
+    QVERIFY(!circle.isNull() && !circle->hasPath());
+
+    const QVector<QPointF> samples = circle->samplePanTilt(circle->defaultParams(), 128);
+    QCOMPARE(samples.size(), 128);
+
+    EFXPath p;
+    QVERIFY(p.setPoints(EFXPath::fromStroke(samples, 0.01, true), true, true, EFXPath::ConstantSpeed));
+    QString err;
+    const QByteArray json = circle->withPath(p.toJson(), "user-circle", "My circle", &err);
+    QVERIFY2(!json.isEmpty(), qPrintable(err));
+
+    EFXEffectPtr copy = EFXEffect::fromJson(json, &err);
+    QVERIFY2(!copy.isNull(), qPrintable(err));
+    QVERIFY(copy->hasPath());
+    QCOMPARE(copy->id(), QString("user-circle"));
+    QCOMPARE(copy->name(), QString("My circle"));
+    QVERIFY(copy->channels().isEmpty());
+
+    // follows the original within a small tolerance
+    for (int i = 0; i < 32; i++)
+    {
+        double ox, oy, cx, cy;
+        circle->evaluatePanTilt(2 * M_PI * i / 32, 0, 1, 0, circle->defaultParams(), &ox, &oy);
+        copy->evaluatePanTilt(2 * M_PI * i / 32, 0, 1, 0, QVector<double>(), &cx, &cy);
+        QVERIFY(std::hypot(ox - cx, oy - cy) < 0.3); // constant speed vs time: phase may differ a little
+    }
+
+    // an effect with extra channels keeps them (breathing-spot has a dimmer channel)
+    EFXEffectPtr breathing = lib.effect("breathing-spot");
+    const QByteArray j2 = breathing->withPath(p.toJson(), "user-b", "B", &err);
+    QVERIFY2(!j2.isEmpty(), qPrintable(err));
+    EFXEffectPtr b2 = EFXEffect::fromJson(j2, &err);
+    QVERIFY(!b2.isNull());
+    QVERIFY(b2->hasPath());
+    QCOMPARE(b2->channels().size(), 1);
+
+    // invalid new id is rejected
+    QVERIFY(circle->withPath(p.toJson(), "bad id!", "x", &err).isEmpty());
+    QVERIFY(!err.isEmpty());
+}
