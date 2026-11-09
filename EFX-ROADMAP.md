@@ -10,6 +10,13 @@
 - [ ] Phase 6  Library hot reload (QFileSystemWatcher)
 - [ ] Phase 7  Built-in HTTP API server for uploading effects from an external generator
                (user request, project independent library)
+- [ ] Phase 8  Visual effect authoring in the QML editor (user request):
+               - draw own paths / waypoints, e.g. points on the stage floor that the heads
+                 sweep through (floor point -> pan/tilt per fixture)
+               - edit effects imported through the API with a proper UI (no JSON editing)
+               - save the result as a library effect (usable in every project, exportable)
+               Depends on phase 3 (paths/keyframes) and phase 5 (editor). Floor-point aiming
+               needs fixture positions (3D/monitor) and pan/tilt ranges: open question.
 
 ## Phase 7 requirements (from the user)
 - API server runs inside QLC+

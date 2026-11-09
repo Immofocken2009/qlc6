@@ -32,8 +32,9 @@ class EFXEditor final : public FunctionEditor
 {
     Q_OBJECT
 
-    Q_PROPERTY(QStringList algorithms READ algorithms CONSTANT)
+    Q_PROPERTY(QStringList algorithms READ algorithms NOTIFY effectListChanged)
     Q_PROPERTY(int algorithmIndex READ algorithmIndex WRITE setAlgorithmIndex NOTIFY algorithmIndexChanged)
+    Q_PROPERTY(QVariantList effectParams READ effectParams NOTIFY effectParamsChanged)
 
     Q_PROPERTY(bool isRelative READ isRelative WRITE setIsRelative NOTIFY isRelativeChanged)
     Q_PROPERTY(int algorithmWidth READ algorithmWidth WRITE setAlgorithmWidth NOTIFY algorithmWidthChanged)
@@ -43,10 +44,6 @@ class EFXEditor final : public FunctionEditor
     Q_PROPERTY(int algorithmYOffset READ algorithmYOffset WRITE setAlgorithmYOffset NOTIFY algorithmYOffsetChanged)
     Q_PROPERTY(int algorithmRotation READ algorithmRotation WRITE setAlgorithmRotation NOTIFY algorithmRotationChanged)
     Q_PROPERTY(int algorithmStartOffset READ algorithmStartOffset WRITE setAlgorithmStartOffset NOTIFY algorithmStartOffsetChanged)
-    Q_PROPERTY(int algorithmXFrequency READ algorithmXFrequency WRITE setAlgorithmXFrequency NOTIFY algorithmXFrequencyChanged)
-    Q_PROPERTY(int algorithmYFrequency READ algorithmYFrequency WRITE setAlgorithmYFrequency NOTIFY algorithmYFrequencyChanged)
-    Q_PROPERTY(int algorithmXPhase READ algorithmXPhase WRITE setAlgorithmXPhase NOTIFY algorithmXPhaseChanged)
-    Q_PROPERTY(int algorithmYPhase READ algorithmYPhase WRITE setAlgorithmYPhase NOTIFY algorithmYPhaseChanged)
 
     Q_PROPERTY(int propagation READ propagation WRITE setPropagation NOTIFY propagationChanged)
 
@@ -67,12 +64,18 @@ public:
     /** Set the ID of the EFX to edit */
     void setFunctionID(quint32 id) override;
 
+    /** Rebuild the selector list from the effect library */
+    void refreshEffectList();
+
 protected slots:
     void slotAttributeChanged(int attrIndex, qreal fraction);
 
 private:
     /** Reference of the EFX currently being edited */
     EFX *m_efx;
+
+    /** Effect ids shown in the selector, sorted; same order as algorithms() */
+    QStringList m_effectIds;
 
     /************************************************************************
      * Algorithm
@@ -112,21 +115,12 @@ public:
     int algorithmStartOffset() const;
     void setAlgorithmStartOffset(int algorithmStartOffset);
 
-    /** Get/set the current algorithm X frequency */
-    int algorithmXFrequency() const;
-    void setAlgorithmXFrequency(int algorithmXFrequency);
+    /** The parameters of the selected effect, one map per parameter:
+     *  id, label, type, min, max, step, value */
+    QVariantList effectParams() const;
 
-    /** Get/set the current algorithm Y frequency */
-    int algorithmYFrequency() const;
-    void setAlgorithmYFrequency(int algorithmYFrequency);
-
-    /** Get/set the current algorithm X phase */
-    int algorithmXPhase() const;
-    void setAlgorithmXPhase(int algorithmXPhase);
-
-    /** Get/set the current algorithm Y phase */
-    int algorithmYPhase() const;
-    void setAlgorithmYPhase(int algorithmYPhase);
+    /** Set a parameter of the selected effect by its id */
+    Q_INVOKABLE void setEffectParam(const QString &id, double value);
 
     /** Get/set whether the EFX drives the fixtures' dimmer from their tilt */
     bool dimmerControl() const;
@@ -142,10 +136,8 @@ signals:
     void algorithmYOffsetChanged();
     void algorithmRotationChanged();
     void algorithmStartOffsetChanged();
-    void algorithmXFrequencyChanged();
-    void algorithmYFrequencyChanged();
-    void algorithmXPhaseChanged();
-    void algorithmYPhaseChanged();
+    void effectListChanged();
+    void effectParamsChanged();
 
     /************************************************************************
      * Fixtures

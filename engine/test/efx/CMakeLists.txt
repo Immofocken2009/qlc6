@@ -3,6 +3,7 @@ add_executable(efx_test WIN32
     ../mastertimer/mastertimer_stub.cpp ../mastertimer/mastertimer_stub.h
     efx_test.cpp efx_test.h
 )
+target_compile_definitions(efx_test PRIVATE EFX_PRESET_DIR="${CMAKE_SOURCE_DIR}/resources/efx")
 target_include_directories(efx_test PRIVATE
     ../../../plugins/interfaces
     ../../src

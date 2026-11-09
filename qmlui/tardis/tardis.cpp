@@ -1104,10 +1104,20 @@ int Tardis::processAction(TardisAction &action, bool undo)
             member(qobject_cast<EFX *>(m_doc->function(action.m_objID)), EFX::PropagationMode(value->toInt()));
         }
         break;
-        case EFXSetAlgorithmIndex:
+        case EFXSetEffect:
         {
-            auto member = std::mem_fn(&EFX::setAlgorithm);
-            member(qobject_cast<EFX *>(m_doc->function(action.m_objID)), EFX::Algorithm(value->toInt()));
+            EFX *efx = qobject_cast<EFX *>(m_doc->function(action.m_objID));
+            if (efx)
+                efx->setEffect(value->toString());
+        }
+        break;
+        case EFXSetEffectParam:
+        {
+            // value is a [parameter id, value] list
+            EFX *efx = qobject_cast<EFX *>(m_doc->function(action.m_objID));
+            QVariantList pair = value->toList();
+            if (efx && pair.size() == 2)
+                efx->setEffectParam(pair.at(0).toString(), pair.at(1).toDouble());
         }
         break;
         case EFXSetRelative:
@@ -1149,30 +1159,6 @@ int Tardis::processAction(TardisAction &action, bool undo)
         case EFXSetStartOffset:
         {
             auto member = std::mem_fn(&EFX::setStartOffset);
-            member(qobject_cast<EFX *>(m_doc->function(action.m_objID)), value->toInt());
-        }
-        break;
-        case EFXSetXFrequency:
-        {
-            auto member = std::mem_fn(&EFX::setXFrequency);
-            member(qobject_cast<EFX *>(m_doc->function(action.m_objID)), value->toInt());
-        }
-        break;
-        case EFXSetYFrequency:
-        {
-            auto member = std::mem_fn(&EFX::setYFrequency);
-            member(qobject_cast<EFX *>(m_doc->function(action.m_objID)), value->toInt());
-        }
-        break;
-        case EFXSetXPhase:
-        {
-            auto member = std::mem_fn(&EFX::setXPhase);
-            member(qobject_cast<EFX *>(m_doc->function(action.m_objID)), value->toInt());
-        }
-        break;
-        case EFXSetYPhase:
-        {
-            auto member = std::mem_fn(&EFX::setYPhase);
             member(qobject_cast<EFX *>(m_doc->function(action.m_objID)), value->toInt());
         }
         break;

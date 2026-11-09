@@ -510,7 +510,9 @@ void EFXFixture::nextStep(QList<Universe *> universes, QSharedPointer<GenericFad
     float valX = 0;
     float valY = 0;
 
-    m_parent->calculatePoint(m_runTimeDirection, m_startOffset, m_currentAngle, &valX, &valY);
+    m_parent->calculatePoint(m_runTimeDirection, m_startOffset, m_currentAngle, &valX, &valY,
+                             m_parent->fixtures().indexOf(this), m_parent->fixtures().size(),
+                             m_head.head);
 
     /* Set target values on faders/universes */
     switch (m_mode)

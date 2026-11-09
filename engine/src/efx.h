@@ -25,8 +25,11 @@
 #include <QPoint>
 #include <QList>
 #include <QMutex>
+#include <QByteArray>
+#include <QMap>
 
 #include "efxfixture.h"
+#include "efxeffect.h"
 #include "function.h"
 
 class QXmlStreamReader;
@@ -42,7 +45,11 @@ class Fixture;
 #define KXMLQLCEFXPropagationModeParallel   QStringLiteral("Parallel")
 #define KXMLQLCEFXPropagationModeSerial     QStringLiteral("Serial")
 #define KXMLQLCEFXPropagationModeAsymmetric QStringLiteral("Asymmetric")
-#define KXMLQLCEFXAlgorithm                 QStringLiteral("Algorithm")
+#define KXMLQLCEFXEffect                    QStringLiteral("Effect")
+#define KXMLQLCEFXEffectParams              QStringLiteral("Params")
+#define KXMLQLCEFXEffectEmbedded            QStringLiteral("Embedded")
+#define KXMLQLCEFXEffectId                  QStringLiteral("Id")
+#define KXMLQLCEFXEffectVersion             QStringLiteral("Version")
 #define KXMLQLCEFXWidth                     QStringLiteral("Width")
 #define KXMLQLCEFXHeight                    QStringLiteral("Height")
 #define KXMLQLCEFXRotation                  QStringLiteral("Rotation")
@@ -51,24 +58,12 @@ class Fixture;
 #define KXMLQLCEFXDimmerControl             QStringLiteral("DimmerControl")
 #define KXMLQLCEFXAxis                      QStringLiteral("Axis")
 #define KXMLQLCEFXOffset                    QStringLiteral("Offset")
-#define KXMLQLCEFXFrequency                 QStringLiteral("Frequency")
-#define KXMLQLCEFXPhase                     QStringLiteral("Phase")
 #define KXMLQLCEFXChannel                   QStringLiteral("Channel")
 #define KXMLQLCEFXX                         QStringLiteral("X")
 #define KXMLQLCEFXY                         QStringLiteral("Y")
 #define KXMLQLCEFXStartScene                QStringLiteral("StartScene")
 #define KXMLQLCEFXStopScene                 QStringLiteral("StopScene")
 
-#define KXMLQLCEFXCircleAlgorithmName       QStringLiteral("Circle")
-#define KXMLQLCEFXEightAlgorithmName        QStringLiteral("Eight")
-#define KXMLQLCEFXLineAlgorithmName         QStringLiteral("Line")
-#define KXMLQLCEFXLine2AlgorithmName        QStringLiteral("Line2")
-#define KXMLQLCEFXDiamondAlgorithmName      QStringLiteral("Diamond")
-#define KXMLQLCEFXSquareAlgorithmName       QStringLiteral("Square")
-#define KXMLQLCEFXSquareChoppyAlgorithmName QStringLiteral("SquareChoppy")
-#define KXMLQLCEFXSquareTrueAlgorithmName   QStringLiteral("SquareTrue")
-#define KXMLQLCEFXLeafAlgorithmName         QStringLiteral("Leaf")
-#define KXMLQLCEFXLissajousAlgorithmName    QStringLiteral("Lissajous")
 
 /**
  * An EFX (effects) function that is used to create
@@ -125,38 +120,62 @@ signals:
     void durationChanged(uint ms);
 
     /*********************************************************************
-     * Algorithm
+     * Effect (JSON definition)
      *********************************************************************/
 public:
-    enum Algorithm
-    {
-        Circle,
-        Eight,
-        Line,
-        Line2,
-        Diamond,
-        Square,
-        SquareChoppy,
-        SquareTrue,
-        Leaf,
-        Lissajous
-    };
+    /**
+     * Select the effect by its library id. The parameters are reset to the
+     * effect's defaults.
+     *
+     * @return false if the library has no effect with that id; the previous
+     *         effect is kept in that case
+     */
+    bool setEffect(const QString& id);
 
-    /** Get the current algorithm */
-    Algorithm algorithm() const;
+    /**
+     * Use a given effect definition (e.g. parsed from a project's embedded
+     * copy). Parameter values already stored by id are kept where they still fit.
+     */
+    void setEffect(EFXEffectPtr effect);
 
-    /** Set the current algorithm */
-    void setAlgorithm(Algorithm algo);
+    /** The effect definition in use, or a null pointer when it could not be resolved */
+    EFXEffectPtr effect() const;
 
-    /** Get the supported algorithms in a string list */
-    static QStringList algorithmList();
+    /** Library id of the effect (kept even if the definition is currently missing) */
+    QString effectId() const;
 
-    /** Convert an algorithm type to a string */
-    static QString algorithmToString(Algorithm algo);
+    /** True when a usable effect definition is loaded */
+    bool hasEffect() const;
 
-    /** Convert a string to an algorithm type */
-    static Algorithm stringToAlgorithm(const QString& str);
+    /** Set a parameter by id; the value is clamped to the effect's limits */
+    void setEffectParam(const QString& id, double value);
 
+    /** Get a parameter by id; falls back to the effect's default */
+    double effectParam(const QString& id) const;
+
+    /** All parameter values in the effect's params() order */
+    QVector<double> effectParamValues() const;
+
+    /** Forget all parameter overrides (back to the effect's defaults) */
+    void resetEffectParams();
+
+private slots:
+    /** The library changed: pick up an updated definition of our effect */
+    void slotLibraryChanged();
+
+private:
+    void resolveEffect();
+    void rebuildParamVector();
+
+private:
+    mutable QMutex m_effectMutex;
+    QString m_effectId;
+    EFXEffectPtr m_effect;
+    QByteArray m_embedded;
+    QMap<QString, double> m_paramMap;
+    QVector<double> m_paramVector;
+
+public:
     /** Get/set whether the EFX drives the fixtures' dimmer from their tilt */
     bool dimmerControlEnabled() const;
     void setDimmerControlEnabled(bool enable);
@@ -200,11 +219,13 @@ public:
      * @param x Used to store the calculated X coordinate (output)
      * @param y Used to store the calculated Y coordinate (output)
      */
-    void calculatePoint(Function::Direction direction, int startOffset, float iterator, float *x, float *y) const;
+    void calculatePoint(Function::Direction direction, int startOffset, float iterator, float *x, float *y,
+                        int fixtureIndex = 0, int fixtureCount = 1, int head = 0) const;
 
 private:
 
-    void preview(QPolygonF &polygon, Function::Direction direction, int startOffset) const;
+    void preview(QPolygonF &polygon, Function::Direction direction, int startOffset,
+                 int fixtureIndex = 0, int fixtureCount = 1) const;
 
     /**
      * Rotate a point of the pattern by rot degrees and scale the point
@@ -228,7 +249,7 @@ private:
      * @param x Used to store the calculated X coordinate (output)
      * @param y Used to store the calculated Y coordinate (output)
      */
-    void calculatePoint(float iterator, float* x, float* y) const;
+    void calculatePoint(float iterator, float* x, float* y, int fixtureIndex, int fixtureCount, int head) const;
 
     /**
      * Recalculate iterator depending on direction
@@ -239,9 +260,6 @@ private:
     float calculateDirection(Function::Direction direction, float iterator) const;
 
 private:
-    /** Current algorithm used by the EFX */
-    Algorithm m_algorithm;
-
     /** Whether the EFX drives the contained fixtures' dimmer from their tilt */
     bool m_dimmerControl;
 
@@ -399,102 +417,6 @@ public:
     int yOffset() const;
 
     /*********************************************************************
-     * Frequency
-     *********************************************************************/
-public:
-    /**
-     * Set the lissajous pattern frequency on the X-axis
-     *
-     * @param freq Pattern frequency (0-5)
-     */
-    void setXFrequency(int freq);
-
-    /**
-     * Get the lissajous pattern frequency on the X-axis
-     *
-     * @return Pattern frequency (0-5)
-     */
-    int xFrequency() const;
-
-    /**
-     * Set the lissajous pattern frequency on the Y-axis
-     *
-     * @param freq Pattern frequency (0-5)
-     */
-    void setYFrequency(int freq);
-
-    /**
-     * Get the lissajous pattern frequency on the Y-axis
-     *
-     * @return Pattern frequency (0-5)
-     */
-    int yFrequency() const;
-
-    /**
-     * Returns true when lissajous has been selected
-     */
-    bool isFrequencyEnabled() const;
-
-private:
-    /**
-     * Lissajous pattern X frequency, see setXFrequency()
-     */
-    float m_xFrequency;
-
-    /**
-     * Lissajous pattern Y frequency, see setYFrequency()
-     */
-    float m_yFrequency;
-
-    /*********************************************************************
-     * Phase
-     *********************************************************************/
-public:
-    /**
-     * Set the lissajous pattern phase on the X-axis
-     *
-     * @param phase Pattern phase (0-359)
-     */
-    void setXPhase(int phase);
-
-    /**
-     * Get the lissajous pattern phase on the X-axis
-     *
-     * @return Pattern phase (0-359)
-     */
-    int xPhase() const;
-
-    /**
-     * Set the lissajous pattern phase on the Y-axis
-     *
-     * @param phase Pattern phase (0-359)
-     */
-    void setYPhase(int phase);
-
-    /**
-     * Get the lissajous pattern phase on the Y-axis
-     *
-     * @return Pattern phase (0-359)
-     */
-    int yPhase() const;
-
-    /**
-     * Returns true when lissajous has been selected
-     */
-    bool isPhaseEnabled() const;
-
-private:
-    /**
-     * Lissajous pattern X phase, see setXPhase()
-     */
-    float m_xPhase;
-
-    /**
-     * Lissajous pattern Y phase, see setYPhase()
-     */
-    float m_yPhase;
-
-    /*********************************************************************
      * Fixtures
      *********************************************************************/
 public:
@@ -583,6 +505,7 @@ public:
 private:
     /** Load an axis' contents from an XML document*/
     bool loadXMLAxis(QXmlStreamReader &root);
+    bool loadXMLEffect(QXmlStreamReader &root);
 
     /*********************************************************************
      * Speed

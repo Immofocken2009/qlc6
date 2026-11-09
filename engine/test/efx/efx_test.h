@@ -35,41 +35,16 @@ private slots:
 
     void initial();
     void loopDurationWithLongFadeIn();
-    void algorithmNames();
-    void stringToAlgorithm();
     void width();
     void height();
     void rotation();
     void xOffset();
     void yOffset();
-    void xFrequency();
-    void yFrequency();
-    void xPhase();
-    void yPhase();
     void fixtures();
     void propagationMode();
     void dimmerEnvelope();
 
-    void previewCircle();
-    void previewEight();
-    void previewLine();
-    void previewLine2();
-    void previewDiamond();
-    void previewSquare();
-    void previewSquareChoppy();
-    void previewSquareTrue();
-    void previewLeaf();
-    void previewLissajous();
 
-    void previewCircleBackwards();
-    void previewEightBackwards();
-    void previewLineBackwards();
-    void previewLine2Backwards();
-    void previewDiamondBackwards();
-    void previewSquareBackwards();
-    void previewSquareChoppyBackwards();
-    void previewLeafBackwards();
-    void previewLissajousBackwards();
 
     void rotateAndScale();
     void widthHeightOffset();
@@ -87,6 +62,9 @@ private slots:
     void loadWrongRoot();
     void loadDuplicateFixture();
     void save();
+    void effectParams();
+    void effectEmbeddedFallback();
+    void effectMissing();
 
     void preRunPostRun();
     void adjustIntensity();

@@ -26,6 +26,11 @@
 
 #include <math.h>
 
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QMutexLocker>
+
+#include "efxlibrary.h"
 #include "genericfader.h"
 #include "mastertimer.h"
 #include "qlcmacros.h"
@@ -39,13 +44,8 @@
 
 EFX::EFX(Doc* doc)
     : Function(doc, Function::EFXType)
-    , m_algorithm(EFX::Circle)
     , m_dimmerControl(false)
     , m_isRelative(false)
-    , m_xFrequency(2)
-    , m_yFrequency(3)
-    , m_xPhase(M_PI / 2.0)
-    , m_yPhase(0)
 #if QT_VERSION < QT_VERSION_CHECK(5, 14, 0)
     , m_fixturesMutex(QMutex::Recursive)
 #endif
@@ -63,6 +63,11 @@ EFX::EFX(Doc* doc)
     registerAttribute(tr("X Offset"), Function::LastWins, 0.0, 255.0, 127.0);
     registerAttribute(tr("Y Offset"), Function::LastWins, 0.0, 255.0, 127.0);
     registerAttribute(tr("Start Offset"), Function::LastWins, 0.0, 359.0, 0.0);
+
+    connect(EFXLibrary::instance(), &EFXLibrary::effectsChanged, this, &EFX::slotLibraryChanged);
+
+    // Same default as the former algorithm; stays empty if the library has no "circle"
+    setEffect(QStringLiteral("circle"));
 }
 
 EFX::~EFX()
@@ -125,12 +130,17 @@ bool EFX::copyFrom(const Function* function)
 
     updateRotationCache();
 
-    m_xFrequency = efx->m_xFrequency;
-    m_yFrequency = efx->m_yFrequency;
-    m_xPhase = efx->m_xPhase;
-    m_yPhase = efx->m_yPhase;
+    if (efx != this)
+    {
+        QMutexLocker src(&efx->m_effectMutex);
+        QMutexLocker dst(&m_effectMutex);
+        m_effectId = efx->m_effectId;
+        m_effect = efx->m_effect;
+        m_embedded = efx->m_embedded;
+        m_paramMap = efx->m_paramMap;
+        m_paramVector = efx->m_paramVector;
+    }
 
-    m_algorithm = efx->m_algorithm;
     m_dimmerControl = efx->m_dimmerControl;
 
     return Function::copyFrom(function);
@@ -160,93 +170,171 @@ uint EFX::loopDuration() const
 }
 
 /*****************************************************************************
- * Algorithm
+ * Effect (JSON definition)
  *****************************************************************************/
 
-EFX::Algorithm EFX::algorithm() const
+bool EFX::setEffect(const QString& id)
 {
-    return m_algorithm;
+    EFXEffectPtr fx = EFXLibrary::instance()->effect(id);
+    if (fx.isNull())
+        return false;
+
+    {
+        QMutexLocker locker(&m_effectMutex);
+        m_paramMap.clear();
+    }
+    setEffect(fx);
+    return true;
 }
 
-void EFX::setAlgorithm(EFX::Algorithm algo)
+void EFX::setEffect(EFXEffectPtr effect)
 {
-    if (algo == m_algorithm)
+    if (effect.isNull())
         return;
 
-    if (algo >= EFX::Circle && algo <= EFX::Lissajous)
-        m_algorithm = algo;
-    else
-        m_algorithm = EFX::Circle;
-
+    {
+        QMutexLocker locker(&m_effectMutex);
+        m_effect = effect;
+        m_effectId = effect->id();
+        m_embedded = effect->json();
+        rebuildParamVector();
+    }
     emit changed(this->id());
 }
 
-QStringList EFX::algorithmList()
+EFXEffectPtr EFX::effect() const
 {
-    QStringList list;
-    list << algorithmToString(EFX::Circle);
-    list << algorithmToString(EFX::Eight);
-    list << algorithmToString(EFX::Line);
-    list << algorithmToString(EFX::Line2);
-    list << algorithmToString(EFX::Diamond);
-    list << algorithmToString(EFX::Square);
-    list << algorithmToString(EFX::SquareChoppy);
-    list << algorithmToString(EFX::SquareTrue);
-    list << algorithmToString(EFX::Leaf);
-    list << algorithmToString(EFX::Lissajous);
-    return list;
+    QMutexLocker locker(&m_effectMutex);
+    return m_effect;
 }
 
-QString EFX::algorithmToString(EFX::Algorithm algo)
+QString EFX::effectId() const
 {
-    switch (algo)
+    QMutexLocker locker(&m_effectMutex);
+    return m_effectId;
+}
+
+bool EFX::hasEffect() const
+{
+    QMutexLocker locker(&m_effectMutex);
+    return !m_effect.isNull();
+}
+
+void EFX::setEffectParam(const QString& id, double value)
+{
     {
-        default:
-        case EFX::Circle:
-            return QString(KXMLQLCEFXCircleAlgorithmName);
-        case EFX::Eight:
-            return QString(KXMLQLCEFXEightAlgorithmName);
-        case EFX::Line:
-            return QString(KXMLQLCEFXLineAlgorithmName);
-        case EFX::Line2:
-            return QString(KXMLQLCEFXLine2AlgorithmName);
-        case EFX::Diamond:
-            return QString(KXMLQLCEFXDiamondAlgorithmName);
-        case EFX::Square:
-            return QString(KXMLQLCEFXSquareAlgorithmName);
-        case EFX::SquareChoppy:
-            return QString(KXMLQLCEFXSquareChoppyAlgorithmName);
-        case EFX::SquareTrue:
-            return QString(KXMLQLCEFXSquareTrueAlgorithmName);
-        case EFX::Leaf:
-            return QString(KXMLQLCEFXLeafAlgorithmName);
-        case EFX::Lissajous:
-            return QString(KXMLQLCEFXLissajousAlgorithmName);
+        QMutexLocker locker(&m_effectMutex);
+        if (!m_effect.isNull())
+        {
+            bool known = false;
+            for (const EFXParam& p : m_effect->params())
+            {
+                if (p.id == id)
+                {
+                    value = EFXEffect::sanitizeParam(p, value);
+                    known = true;
+                    break;
+                }
+            }
+            if (!known)
+                return;
+        }
+        m_paramMap[id] = value;
+        rebuildParamVector();
+    }
+    emit changed(this->id());
+}
+
+double EFX::effectParam(const QString& id) const
+{
+    QMutexLocker locker(&m_effectMutex);
+    if (m_paramMap.contains(id))
+        return m_paramMap.value(id);
+    if (!m_effect.isNull())
+    {
+        for (const EFXParam& p : m_effect->params())
+        {
+            if (p.id == id)
+                return p.def;
+        }
+    }
+    return 0.0;
+}
+
+QVector<double> EFX::effectParamValues() const
+{
+    QMutexLocker locker(&m_effectMutex);
+    return m_paramVector;
+}
+
+void EFX::resetEffectParams()
+{
+    {
+        QMutexLocker locker(&m_effectMutex);
+        m_paramMap.clear();
+        rebuildParamVector();
+    }
+    emit changed(this->id());
+}
+
+// caller holds m_effectMutex
+void EFX::rebuildParamVector()
+{
+    m_paramVector.clear();
+    if (m_effect.isNull())
+        return;
+
+    for (const EFXParam& p : m_effect->params())
+    {
+        double v = m_paramMap.contains(p.id) ? EFXEffect::sanitizeParam(p, m_paramMap.value(p.id)) : p.def;
+        m_paramVector << v;
     }
 }
 
-EFX::Algorithm EFX::stringToAlgorithm(const QString& str)
+/* Library first, so an updated library effect applies to every project that
+ * uses it; the embedded copy is the fallback when the library file is missing. */
+void EFX::resolveEffect()
 {
-    if (str == QString(KXMLQLCEFXEightAlgorithmName))
-        return EFX::Eight;
-    else if (str == QString(KXMLQLCEFXLineAlgorithmName))
-        return EFX::Line;
-    else if (str == QString(KXMLQLCEFXLine2AlgorithmName))
-        return EFX::Line2;
-    else if (str == QString(KXMLQLCEFXDiamondAlgorithmName))
-        return EFX::Diamond;
-    else if (str == QString(KXMLQLCEFXSquareAlgorithmName))
-        return EFX::Square;
-    else if (str == QString(KXMLQLCEFXSquareChoppyAlgorithmName))
-        return EFX::SquareChoppy;
-    else if (str == QString(KXMLQLCEFXSquareTrueAlgorithmName))
-        return EFX::SquareTrue;
-    else if (str == QString(KXMLQLCEFXLeafAlgorithmName))
-        return EFX::Leaf;
-    else if (str == QString(KXMLQLCEFXLissajousAlgorithmName))
-        return EFX::Lissajous;
+    EFXEffectPtr fx = EFXLibrary::instance()->effect(m_effectId);
+
+    if (fx.isNull() && !m_embedded.isEmpty())
+    {
+        QString err;
+        fx = EFXEffect::fromJson(m_embedded, &err);
+        if (fx.isNull())
+            qWarning() << "EFX" << name() << ": embedded effect is invalid:" << err;
+    }
+
+    if (fx.isNull())
+    {
+        qWarning() << "EFX" << name() << ": effect" << m_effectId << "not found in the library and not embedded";
+        m_effect.clear();
+    }
     else
-        return EFX::Circle;
+    {
+        m_effect = fx;
+        m_embedded = fx->json();
+    }
+    rebuildParamVector();
+}
+
+void EFX::slotLibraryChanged()
+{
+    bool changedEffect = false;
+    {
+        QMutexLocker locker(&m_effectMutex);
+        if (m_effectId.isEmpty())
+            return;
+        EFXEffectPtr fx = EFXLibrary::instance()->effect(m_effectId);
+        if (fx.isNull() || fx == m_effect)
+            return;
+        m_effect = fx;
+        m_embedded = fx->json();
+        rebuildParamVector();
+        changedEffect = true;
+    }
+    if (changedEffect)
+        emit changed(this->id());
 }
 
 bool EFX::dimmerControlEnabled() const
@@ -275,11 +363,12 @@ void EFX::previewFixtures(QVector <QPolygonF>& polygons) const
                 : 0;
 
         preview(polygons[i], m_fixtures[i]->m_direction,
-                m_fixtures[i]->m_startOffset + propagationOffset);
+                m_fixtures[i]->m_startOffset + propagationOffset, i, m_fixtures.size());
     }
 }
 
-void EFX::preview(QPolygonF &polygon, Function::Direction direction, int startOffset) const
+void EFX::preview(QPolygonF &polygon, Function::Direction direction, int startOffset,
+                  int fixtureIndex, int fixtureCount) const
 {
     float stepCount = 512.0;
     int step = 0;
@@ -295,13 +384,14 @@ void EFX::preview(QPolygonF &polygon, Function::Direction direction, int startOf
     /* Draw a preview of the effect */
     for (step = 0; step < stepCount; step++)
     {
-        calculatePoint(direction, startOffset, i, &x, &y);
+        calculatePoint(direction, startOffset, i, &x, &y, fixtureIndex, fixtureCount);
         polygon << QPointF(x, y);
         i += stepSize;
     }
 }
 
-void EFX::calculatePoint(Function::Direction direction, int startOffset, float iterator, float *x, float *y) const
+void EFX::calculatePoint(Function::Direction direction, int startOffset, float iterator, float *x, float *y,
+                         int fixtureIndex, int fixtureCount, int head) const
 {
     iterator = calculateDirection(direction, iterator);
     iterator += convertOffset(startOffset + getAttributeValue(StartOffset));
@@ -309,7 +399,7 @@ void EFX::calculatePoint(Function::Direction direction, int startOffset, float i
     if (iterator >= M_PI * 2.0)
         iterator -= M_PI * 2.0;
 
-    calculatePoint(iterator, x, y);
+    calculatePoint(iterator, x, y, fixtureIndex, fixtureCount, head);
 }
 
 void EFX::rotateAndScale(float *x, float *y) const
@@ -340,22 +430,18 @@ float EFX::calculateDirection(Function::Direction direction, float iterator) con
     if (direction == this->direction())
         return iterator;
 
-    switch (algorithm())
+    EFXEffectPtr fx;
+    QVector<double> params;
     {
-    default:
-    case Circle:
-    case Eight:
-    case Line2:
-    case Diamond:
-    case Square:
-    case SquareChoppy:
-    case SquareTrue:
-    case Leaf:
-    case Lissajous:
-        return (M_PI * 2.0) - iterator;
-    case Line:
-        return (iterator > M_PI) ? (iterator - M_PI) : (iterator + M_PI);
+        QMutexLocker locker(&m_effectMutex);
+        fx = m_effect;
+        params = m_paramVector;
     }
+
+    if (fx.isNull())
+        return (M_PI * 2.0) - iterator;
+
+    return float(fx->reverseTheta(iterator, params));
 }
 
 float EFX::dimmerLevel(float startOffset, float iterator) const
@@ -384,121 +470,22 @@ float EFX::dimmerLevel(float startOffset, float iterator) const
 }
 
 // this function should map from 0..M_PI * 2 -> -1..1
-void EFX::calculatePoint(float iterator, float *x, float *y) const
+void EFX::calculatePoint(float iterator, float *x, float *y, int fixtureIndex, int fixtureCount, int head) const
 {
-    switch (algorithm())
+    EFXEffectPtr fx;
+    QVector<double> params;
     {
-    default:
-    case Circle:
-        *x = cos(iterator + M_PI_2);
-        *y = cos(iterator);
-        break;
-
-    case Eight:
-        *x = cos((iterator * 2) + M_PI_2);
-        *y = cos(iterator);
-        break;
-
-    case Line:
-        *x = cos(iterator);
-        *y = cos(iterator);
-        break;
-
-    case Line2:
-        *x = iterator / M_PI - 1;
-        *y = iterator / M_PI - 1;
-        break;
-
-    case Diamond:
-        *x = pow(cos(iterator - M_PI_2), 3);
-        *y = pow(cos(iterator), 3);
-        break;
-
-    case Square:
-        if (iterator < M_PI / 2)
-        {
-            *x = (iterator * 2 / M_PI) * 2 - 1;
-            *y = 1;
-        }
-        else if (M_PI / 2 <= iterator && iterator < M_PI)
-        {
-            *x = 1;
-            *y = (1 - (iterator - M_PI / 2) * 2 / M_PI) * 2 - 1;
-        }
-        else if (M_PI <= iterator && iterator < M_PI * 3 / 2)
-        {
-            *x = (1 - (iterator - M_PI) * 2 / M_PI) * 2 - 1;
-            *y = -1;
-        }
-        else // M_PI * 3 / 2 <= iterator
-        {
-            *x = -1;
-            *y = ((iterator - M_PI * 3 / 2) * 2 / M_PI) * 2 - 1;
-        }
-        break;
-
-    case SquareChoppy:
-        *x = round(cos(iterator));
-        *y = round(sin(iterator));
-        break;
-
-    case SquareTrue:
-        if (iterator < M_PI / 2)
-        {
-            *x = 1;
-            *y = 1;
-        }
-        else if (M_PI / 2 <= iterator && iterator < M_PI)
-        {
-            *x = 1;
-            *y = -1;
-        }
-        else if (M_PI <= iterator && iterator < M_PI * 3 / 2)
-        {
-            *x = -1;
-            *y = -1;
-        }
-        else // M_PI * 3 / 2 <= iterator
-        {
-            *x = -1;
-            *y = 1;
-        }
-        break;
-
-    case Leaf:
-        *x = pow(cos(iterator + M_PI_2), 5);
-        *y = cos(iterator);
-        break;
-
-    case Lissajous:
-        {
-            if (m_xFrequency > 0)
-                *x = cos((m_xFrequency * iterator) - m_xPhase);
-            else
-            {
-                float iterator0 = ((iterator + m_xPhase) / M_PI);
-                int fff = iterator0;
-                iterator0 -= (fff - fff % 2);
-                float forward = 1 - floor(iterator0); // 1 when forward
-                float backward = 1 - forward; // 1 when backward
-                iterator0 = iterator0 - floor(iterator0);
-                *x = (forward * iterator0 + backward * (1 - iterator0)) * 2 - 1;
-            }
-            if (m_yFrequency > 0)
-                *y = cos((m_yFrequency * iterator) - m_yPhase);
-            else
-            {
-                float iterator0 = ((iterator + m_yPhase) / M_PI);
-                int fff = iterator0;
-                iterator0 -= (fff - fff % 2);
-                float forward = 1 - floor(iterator0); // 1 when forward
-                float backward = 1 - forward; // 1 when backward
-                iterator0 = iterator0 - floor(iterator0);
-                *y = (forward * iterator0 + backward * (1 - iterator0)) * 2 - 1;
-            }
-        }
-        break;
+        QMutexLocker locker(&m_effectMutex);
+        fx = m_effect;
+        params = m_paramVector;
     }
+
+    double pan = 0.0, tilt = 0.0;
+    if (!fx.isNull())
+        fx->evaluatePanTilt(iterator, fixtureIndex, fixtureCount, head, params, &pan, &tilt);
+
+    *x = float(pan);
+    *y = float(tilt);
 
     rotateAndScale(x, y);
 }
@@ -615,74 +602,6 @@ void EFX::setYOffset(int offset)
 int EFX::yOffset() const
 {
     return static_cast<int> (attributes().at(YOffset).m_value);
-}
-
-/*****************************************************************************
- * Frequency
- *****************************************************************************/
-
-void EFX::setXFrequency(int freq)
-{
-    m_xFrequency = static_cast<float> (CLAMP(freq, 0, 32));
-    emit changed(this->id());
-}
-
-int EFX::xFrequency() const
-{
-    return static_cast<int> (m_xFrequency);
-}
-
-void EFX::setYFrequency(int freq)
-{
-    m_yFrequency = static_cast<float> (CLAMP(freq, 0, 32));
-    emit changed(this->id());
-}
-
-int EFX::yFrequency() const
-{
-    return static_cast<int> (m_yFrequency);
-}
-
-bool EFX::isFrequencyEnabled() const
-{
-    if (m_algorithm == EFX::Lissajous)
-        return true;
-    else
-        return false;
-}
-
-/*****************************************************************************
- * Phase
- *****************************************************************************/
-
-void EFX::setXPhase(int phase)
-{
-    m_xPhase = static_cast<float> (CLAMP(phase, 0, 359)) * M_PI / 180.0;
-    emit changed(this->id());
-}
-
-int EFX::xPhase() const
-{
-    return static_cast<int> (floor((m_xPhase * 180.0 / M_PI) + 0.5));
-}
-
-void EFX::setYPhase(int phase)
-{
-    m_yPhase = static_cast<float> (CLAMP(phase, 0, 359)) * M_PI / 180.0;
-    emit changed(this->id());
-}
-
-int EFX::yPhase() const
-{
-    return static_cast<int> (floor((m_yPhase * 180.0 / M_PI) + 0.5));
-}
-
-bool EFX::isPhaseEnabled() const
-{
-    if (m_algorithm == EFX::Lissajous)
-        return true;
-    else
-        return false;
 }
 
 /*****************************************************************************
@@ -931,8 +850,21 @@ bool EFX::saveXML(QXmlStreamWriter *doc) const
     /* Run order */
     saveXMLRunOrder(doc);
 
-    /* Algorithm */
-    doc->writeTextElement(KXMLQLCEFXAlgorithm, algorithmToString(algorithm()));
+    /* Effect: library reference, parameter overrides by id and an embedded copy */
+    {
+        QMutexLocker locker(&m_effectMutex);
+        doc->writeStartElement(KXMLQLCEFXEffect);
+        doc->writeAttribute(KXMLQLCEFXEffectId, m_effectId);
+        doc->writeAttribute(KXMLQLCEFXEffectVersion, QString::number(m_effect.isNull() ? 1 : m_effect->version()));
+
+        QJsonObject params;
+        for (auto it = m_paramMap.constBegin(); it != m_paramMap.constEnd(); ++it)
+            params.insert(it.key(), it.value());
+        doc->writeTextElement(KXMLQLCEFXEffectParams,
+                              QString::fromUtf8(QJsonDocument(params).toJson(QJsonDocument::Compact)));
+        doc->writeTextElement(KXMLQLCEFXEffectEmbedded, QString::fromUtf8(m_embedded));
+        doc->writeEndElement();
+    }
     /* Width */
     doc->writeTextElement(KXMLQLCEFXWidth, QString::number(width()));
     /* Height */
@@ -954,10 +886,6 @@ bool EFX::saveXML(QXmlStreamWriter *doc) const
 
     /* Offset */
     doc->writeTextElement(KXMLQLCEFXOffset, QString::number(xOffset()));
-    /* Frequency */
-    doc->writeTextElement(KXMLQLCEFXFrequency, QString::number(xFrequency()));
-    /* Phase */
-    doc->writeTextElement(KXMLQLCEFXPhase, QString::number(xPhase()));
 
     /* End the (X) <Axis> tag */
     doc->writeEndElement();
@@ -970,10 +898,6 @@ bool EFX::saveXML(QXmlStreamWriter *doc) const
 
     /* Offset */
     doc->writeTextElement(KXMLQLCEFXOffset, QString::number(yOffset()));
-    /* Frequency */
-    doc->writeTextElement(KXMLQLCEFXFrequency, QString::number(yFrequency()));
-    /* Phase */
-    doc->writeTextElement(KXMLQLCEFXPhase, QString::number(yPhase()));
 
     /* End the (Y) <Axis> tag */
     doc->writeEndElement();
@@ -1033,10 +957,15 @@ bool EFX::loadXML(QXmlStreamReader &root)
             /* Propagation mode */
             setPropagationMode(stringToPropagationMode(root.readElementText()));
         }
-        else if (root.name() == KXMLQLCEFXAlgorithm)
+        else if (root.name() == KXMLQLCEFXEffect)
         {
-            /* Algorithm */
-            setAlgorithm(stringToAlgorithm(root.readElementText()));
+            loadXMLEffect(root);
+        }
+        else if (root.name() == QStringLiteral("Algorithm"))
+        {
+            /* Projects saved before the JSON effects carry an algorithm name. They are not converted. */
+            qWarning() << "EFX" << name() << ": legacy algorithm" << root.readElementText()
+                       << "is not supported, select an effect";
         }
         else if (root.name() == KXMLQLCFunctionDirection)
         {
@@ -1097,14 +1026,47 @@ bool EFX::loadXML(QXmlStreamReader &root)
         }
     }
 
+    {
+        QMutexLocker locker(&m_effectMutex);
+        if (!m_effectId.isEmpty() || !m_embedded.isEmpty())
+            resolveEffect();
+    }
+
+    return true;
+}
+
+bool EFX::loadXMLEffect(QXmlStreamReader &root)
+{
+    QMutexLocker locker(&m_effectMutex);
+
+    m_effectId = root.attributes().value(KXMLQLCEFXEffectId).toString();
+    m_embedded.clear();
+    m_paramMap.clear();
+
+    while (root.readNextStartElement())
+    {
+        if (root.name() == KXMLQLCEFXEffectParams)
+        {
+            QJsonObject o = QJsonDocument::fromJson(root.readElementText().toUtf8()).object();
+            for (auto it = o.constBegin(); it != o.constEnd(); ++it)
+                m_paramMap[it.key()] = it.value().toDouble();
+        }
+        else if (root.name() == KXMLQLCEFXEffectEmbedded)
+        {
+            m_embedded = root.readElementText().toUtf8();
+        }
+        else
+        {
+            qWarning() << "Unknown EFX effect tag:" << root.name();
+            root.skipCurrentElement();
+        }
+    }
     return true;
 }
 
 bool EFX::loadXMLAxis(QXmlStreamReader &root)
 {
-    int frequency = 0;
     int offset = 0;
-    int phase = 0;
     QString axis;
 
     if (root.name() != KXMLQLCEFXAxis)
@@ -1121,10 +1083,8 @@ bool EFX::loadXMLAxis(QXmlStreamReader &root)
     {
         if (root.name() == KXMLQLCEFXOffset)
             offset = root.readElementText().toInt();
-        else if (root.name() == KXMLQLCEFXFrequency)
-            frequency = root.readElementText().toInt();
-        else if (root.name() == KXMLQLCEFXPhase)
-            phase = root.readElementText().toInt();
+        else if (root.name() == QStringLiteral("Frequency") || root.name() == QStringLiteral("Phase"))
+            root.skipCurrentElement(); // legacy lissajous values, now effect parameters
         else
         {
             qWarning() << "Unknown EFX axis tag:" << root.name();
@@ -1135,15 +1095,11 @@ bool EFX::loadXMLAxis(QXmlStreamReader &root)
     if (axis == KXMLQLCEFXY)
     {
         setYOffset(offset);
-        setYFrequency(frequency);
-        setYPhase(phase);
         return true;
     }
     else if (axis == KXMLQLCEFXX)
     {
         setXOffset(offset);
-        setXFrequency(frequency);
-        setXPhase(phase);
         return true;
     }
     else

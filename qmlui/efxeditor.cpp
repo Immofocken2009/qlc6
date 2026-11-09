@@ -27,6 +27,7 @@
 #include "efxeditor.h"
 #include "listmodel.h"
 #include "tardis.h"
+#include "efxlibrary.h"
 #include "efx.h"
 #include "doc.h"
 #include "app.h"
@@ -39,6 +40,16 @@ EFXEditor::EFXEditor(QQuickView *view, Doc *doc, QObject *parent)
     , m_maxTiltDegrees(270.0)
 {
     m_editorObjectName = "efxEditorRoot";
+
+    refreshEffectList();
+    connect(EFXLibrary::instance(), &EFXLibrary::effectsChanged, this, [this]()
+    {
+        refreshEffectList();
+        emit effectListChanged();
+        emit algorithmIndexChanged();
+        emit effectParamsChanged();
+        updateAlgorithmData();
+    });
 
     m_fixtureList = new ListModel(this);
     QStringList listRoles;
@@ -53,6 +64,14 @@ EFXEditor::EFXEditor(QQuickView *view, Doc *doc, QObject *parent)
 EFXEditor::~EFXEditor()
 {
     m_view->rootContext()->setContextProperty("efxEditor", nullptr);
+}
+
+void EFXEditor::refreshEffectList()
+{
+    m_effectIds.clear();
+    const QList<EFXEffectPtr> list = EFXLibrary::instance()->effects();
+    for (const EFXEffectPtr &fx : list)
+        m_effectIds << fx->id();
 }
 
 void EFXEditor::setFunctionID(quint32 id)
@@ -70,6 +89,7 @@ void EFXEditor::setFunctionID(quint32 id)
         connect(m_efx, &EFX::attributeChanged, this, &EFXEditor::slotAttributeChanged);
         updateAlgorithmData();
         emit algorithmIndexChanged();
+        emit effectParamsChanged();
     }
 
     FunctionEditor::setFunctionID(id);
@@ -100,7 +120,11 @@ void EFXEditor::slotAttributeChanged(int attrIndex, qreal fraction)
 
 QStringList EFXEditor::algorithms() const
 {
-    return EFX::algorithmList();
+    QStringList names;
+    const QList<EFXEffectPtr> list = EFXLibrary::instance()->effects();
+    for (const EFXEffectPtr &fx : list)
+        names << fx->name();
+    return names;
 }
 
 int EFXEditor::algorithmIndex() const
@@ -108,18 +132,61 @@ int EFXEditor::algorithmIndex() const
     if (m_efx == nullptr)
         return 0;
 
-    QStringList algoList = algorithms();
-    return algoList.indexOf(EFX::algorithmToString(m_efx->algorithm()));
+    return m_effectIds.indexOf(m_efx->effectId());
 }
 
 void EFXEditor::setAlgorithmIndex(int algoIndex)
 {
-    if (m_efx == nullptr || algoIndex == m_efx->algorithm())
+    if (m_efx == nullptr || algoIndex < 0 || algoIndex >= m_effectIds.size())
         return;
 
-    Tardis::instance()->enqueueAction(Tardis::EFXSetAlgorithmIndex, m_efx->id(), m_efx->algorithm(), algoIndex);
-    m_efx->setAlgorithm(EFX::Algorithm(algoIndex));
+    const QString newId = m_effectIds.at(algoIndex);
+    if (newId == m_efx->effectId())
+        return;
+
+    Tardis::instance()->enqueueAction(Tardis::EFXSetEffect, m_efx->id(), m_efx->effectId(), newId);
+    m_efx->setEffect(newId);
     emit algorithmIndexChanged();
+    emit effectParamsChanged();
+    updateAlgorithmData();
+}
+
+QVariantList EFXEditor::effectParams() const
+{
+    QVariantList list;
+    if (m_efx == nullptr || !m_efx->hasEffect())
+        return list;
+
+    const QList<EFXParam> params = m_efx->effect()->params();
+    for (const EFXParam &p : params)
+    {
+        QVariantMap m;
+        m["id"] = p.id;
+        m["label"] = p.label;
+        m["type"] = p.type;
+        m["min"] = p.min;
+        m["max"] = p.max;
+        m["step"] = p.step;
+        m["value"] = m_efx->effectParam(p.id);
+        list << m;
+    }
+    return list;
+}
+
+void EFXEditor::setEffectParam(const QString &id, double value)
+{
+    if (m_efx == nullptr)
+        return;
+
+    const double oldValue = m_efx->effectParam(id);
+    m_efx->setEffectParam(id, value);
+    const double newValue = m_efx->effectParam(id);
+    if (oldValue == newValue)
+        return;
+
+    Tardis::instance()->enqueueAction(Tardis::EFXSetEffectParam, m_efx->id(),
+                                      QVariantList() << id << oldValue, QVariantList() << id << newValue);
+    emit effectParamsChanged();
     updateAlgorithmData();
 }
 
@@ -259,82 +326,6 @@ void EFXEditor::setAlgorithmStartOffset(int algorithmStartOffset)
     Tardis::instance()->enqueueAction(Tardis::EFXSetStartOffset, m_efx->id(), m_efx->startOffset(), algorithmStartOffset);
     m_efx->setStartOffset(algorithmStartOffset);
     emit algorithmStartOffsetChanged();
-    updateAlgorithmData();
-}
-
-int EFXEditor::algorithmXFrequency() const
-{
-    if (m_efx == nullptr)
-        return 0;
-
-    return m_efx->xFrequency();
-}
-
-void EFXEditor::setAlgorithmXFrequency(int algorithmXFrequency)
-{
-    if (m_efx == nullptr || algorithmXFrequency == m_efx->xFrequency())
-        return;
-
-    Tardis::instance()->enqueueAction(Tardis::EFXSetXFrequency, m_efx->id(), m_efx->xFrequency(), algorithmXFrequency);
-    m_efx->setXFrequency(algorithmXFrequency);
-    emit algorithmXFrequencyChanged();
-    updateAlgorithmData();
-}
-
-int EFXEditor::algorithmYFrequency() const
-{
-    if (m_efx == nullptr)
-        return 0;
-
-    return m_efx->yFrequency();
-}
-
-void EFXEditor::setAlgorithmYFrequency(int algorithmYFrequency)
-{
-    if (m_efx == nullptr || algorithmYFrequency == m_efx->yFrequency())
-        return;
-
-    Tardis::instance()->enqueueAction(Tardis::EFXSetYFrequency, m_efx->id(), m_efx->yFrequency(), algorithmYFrequency);
-    m_efx->setYFrequency(algorithmYFrequency);
-    emit algorithmYFrequencyChanged();
-    updateAlgorithmData();
-}
-
-int EFXEditor::algorithmXPhase() const
-{
-    if (m_efx == nullptr)
-        return 0;
-
-    return m_efx->xPhase();
-}
-
-void EFXEditor::setAlgorithmXPhase(int algorithmXPhase)
-{
-    if (m_efx == nullptr || algorithmXPhase == m_efx->xPhase())
-        return;
-
-    Tardis::instance()->enqueueAction(Tardis::EFXSetXPhase, m_efx->id(), m_efx->xPhase(), algorithmXPhase);
-    m_efx->setXPhase(algorithmXPhase);
-    emit algorithmXPhaseChanged();
-    updateAlgorithmData();
-}
-
-int EFXEditor::algorithmYPhase() const
-{
-    if (m_efx == nullptr)
-        return 0;
-
-    return m_efx->yPhase();
-}
-
-void EFXEditor::setAlgorithmYPhase(int algorithmYPhase)
-{
-    if (m_efx == nullptr || algorithmYPhase == m_efx->yPhase())
-        return;
-
-    Tardis::instance()->enqueueAction(Tardis::EFXSetYPhase, m_efx->id(), m_efx->yPhase(), algorithmYPhase);
-    m_efx->setYPhase(algorithmYPhase);
-    emit algorithmYPhaseChanged();
     updateAlgorithmData();
 }
 
