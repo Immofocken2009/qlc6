@@ -23,6 +23,8 @@
 #include <QMutex>
 #include <QMap>
 #include <QDir>
+#include <QFileSystemWatcher>
+#include <QTimer>
 
 #include "efxeffect.h"
 
@@ -78,8 +80,16 @@ public:
     /** Delete a user effect. System effects cannot be removed. */
     bool removeUserEffect(const QString& id, QString *error = nullptr);
 
+    /** Reload automatically when files in the system or user directory change. */
+    void setWatching(bool watch);
+    bool isWatching() const;
+
 signals:
     void effectsChanged();
+
+private slots:
+    void slotPathChanged();
+    void slotRescan();
 
 private:
     struct Entry
@@ -94,6 +104,11 @@ private:
     QStringList m_errors;
     QDir m_userDir;
     bool m_userDirSet;
+
+    void updateWatches();
+
+    QFileSystemWatcher *m_watcher;
+    QTimer *m_debounce;
 };
 
 /** @} */

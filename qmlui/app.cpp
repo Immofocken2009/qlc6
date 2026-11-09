@@ -700,6 +700,7 @@ void App::initDoc()
 
     /* Load the JSON effect library (system presets, then user effects) */
     EFXLibrary::instance()->reload();
+    EFXLibrary::instance()->setWatching(true);
 
     /* Load RGB scripts */
     m_doc->rgbScriptsCache()->load(RGBScriptsCache::systemScriptsDirectory());

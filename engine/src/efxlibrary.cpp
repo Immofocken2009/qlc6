@@ -28,6 +28,8 @@
 EFXLibrary::EFXLibrary(QObject *parent)
     : QObject(parent)
     , m_userDirSet(false)
+    , m_watcher(nullptr)
+    , m_debounce(nullptr)
 {
 }
 
@@ -78,7 +80,76 @@ int EFXLibrary::reload()
         user = userDirectory();
     count += load(user, true);
 
+    updateWatches();
+    emit effectsChanged(); // also when effects were removed
     return count;
+}
+
+void EFXLibrary::setWatching(bool watch)
+{
+    if (watch == isWatching())
+        return;
+
+    if (watch)
+    {
+        m_debounce = new QTimer(this);
+        m_debounce->setSingleShot(true);
+        m_debounce->setInterval(300);
+        connect(m_debounce, &QTimer::timeout, this, &EFXLibrary::slotRescan);
+        m_watcher = new QFileSystemWatcher(this);
+        connect(m_watcher, &QFileSystemWatcher::directoryChanged, this, &EFXLibrary::slotPathChanged);
+        connect(m_watcher, &QFileSystemWatcher::fileChanged, this, &EFXLibrary::slotPathChanged);
+        updateWatches();
+    }
+    else
+    {
+        delete m_watcher;
+        delete m_debounce;
+        m_watcher = nullptr;
+        m_debounce = nullptr;
+    }
+}
+
+bool EFXLibrary::isWatching() const
+{
+    return m_watcher != nullptr;
+}
+
+void EFXLibrary::updateWatches()
+{
+    if (m_watcher == nullptr)
+        return;
+
+    QStringList paths;
+    {
+        QMutexLocker locker(&m_mutex);
+        for (const Entry& e : m_effects)
+            paths << e.path;
+    }
+    QDir user = m_userDirSet ? m_userDir : QDir();
+    if (!user.exists() || user.path() == QLatin1String("."))
+        user = userDirectory();
+    paths << systemDirectory().absolutePath() << user.absolutePath();
+
+    // Files replaced by a rename (QSaveFile, editors) drop out of the watcher: re-add all
+    if (!m_watcher->files().isEmpty())
+        m_watcher->removePaths(m_watcher->files());
+    if (!m_watcher->directories().isEmpty())
+        m_watcher->removePaths(m_watcher->directories());
+    for (const QString& p : paths)
+        if (QFileInfo::exists(p))
+            m_watcher->addPath(p);
+}
+
+void EFXLibrary::slotPathChanged()
+{
+    if (m_debounce)
+        m_debounce->start();
+}
+
+void EFXLibrary::slotRescan()
+{
+    reload();
 }
 
 int EFXLibrary::load(const QDir& dir, bool user)

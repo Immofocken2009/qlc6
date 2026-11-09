@@ -19,6 +19,7 @@
 */
 
 #include <QtTest>
+#include <QCoreApplication>
 #include <QList>
 #include <QXmlStreamReader>
 #include <QXmlStreamWriter>
@@ -1579,6 +1580,45 @@ void EFX_Test::effectMissing()
     QCOMPARE(e2.effectId(), QString("nope"));
 }
 
+void EFX_Test::libraryHotReload()
+{
+    QDir dir(QDir::tempPath() + "/efx_test_hot");
+    dir.removeRecursively();
+    QVERIFY(QDir().mkpath(dir.path()));
+
+    EFXLibrary *lib = EFXLibrary::instance();
+    lib->setUserDirectory(dir);
+    lib->setWatching(true);
+    QVERIFY(lib->isWatching());
+    QVERIFY(lib->effect("zz-hot").isNull());
+
+    const QByteArray json =
+        "{\"schema\":1,\"id\":\"zz-hot\",\"name\":\"Hot\",\"version\":1,"
+        "\"channels\":[{\"target\":\"pan\",\"expr\":\"sin(theta)\"},"
+        "{\"target\":\"tilt\",\"expr\":\"cos(theta)\"}]}";
+
+    // A file dropped into the user directory shows up without a manual reload
+    QFile f(dir.filePath("zz-hot.json"));
+    QVERIFY(f.open(QIODevice::WriteOnly));
+    f.write(json);
+    f.close();
+    for (int i = 0; i < 50 && lib->effect("zz-hot").isNull(); i++)
+        QTest::qWait(100);
+    QVERIFY(!lib->effect("zz-hot").isNull());
+
+    // ... and disappears when it is deleted
+    QVERIFY(f.remove());
+    for (int i = 0; i < 50 && !lib->effect("zz-hot").isNull(); i++)
+        QTest::qWait(100);
+    QVERIFY(lib->effect("zz-hot").isNull());
+
+    lib->setWatching(false);
+    QVERIFY(!lib->isWatching());
+    lib->setUserDirectory(QDir(QDir::tempPath() + "/efx_test_user"));
+    lib->load(QDir(EFX_PRESET_DIR), false);
+    dir.removeRecursively();
+}
+
 void EFX_Test::effectPath()
 {
     // A Bezier path effect runs through the same pipeline as formula effects
@@ -1736,4 +1776,10 @@ void EFX_Test::missingFixture()
     e->postRun(&timer, ua);
 }
 
-QTEST_APPLESS_MAIN(EFX_Test)
+int main(int argc, char **argv)
+{
+    // The library watches the filesystem, which needs an event loop
+    QCoreApplication app(argc, argv);
+    EFX_Test tc;
+    return QTest::qExec(&tc, argc, argv);
+}
