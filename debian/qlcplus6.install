@@ -1,0 +1,14 @@
+usr/bin/qlcplus6
+usr/lib/*/libqlcplusengine6.so
+usr/lib/*/qt6/plugins/qlcplus6/
+
+usr/share/applications/qlcplus6.desktop
+usr/share/metainfo/org.qlcplus.QLCPlus6.appdata.xml
+
+usr/share/qlcplus/translations6/
+usr/share/qlcplus/web/simpledesk-v6.css
+usr/share/qlcplus/web/simpledesk-v6.js
+usr/share/qlcplus/web/webaccess-v6.css
+usr/share/qlcplus/web/webaccess-v6.html
+usr/share/qlcplus/web/webaccess-v6.js
+usr/share/qlcplus/effects/

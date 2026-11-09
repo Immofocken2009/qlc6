@@ -39,15 +39,18 @@ build_flavour() {
 case "${1:-all}" in
     v4) build_flavour v4 ;;
     v5) build_flavour v5 ;;
+    v6) build_flavour v6 ;;
     all)
         build_flavour v4
-        # Start the second build from a clean tree, so that the artifacts of
-        # the first flavour don't end up in the second set of packages
+        # Start each subsequent build from a clean tree so that artifacts of
+        # one flavour don't end up in another set of packages.
         fakeroot debian/rules clean
         build_flavour v5
+        fakeroot debian/rules clean
+        build_flavour v6
         ;;
     *)
-        echo "Usage: $0 [v4|v5]" >&2
+        echo "Usage: $0 [v4|v5|v6]" >&2
         exit 1
         ;;
 esac

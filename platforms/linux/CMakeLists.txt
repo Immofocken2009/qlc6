@@ -1,6 +1,8 @@
 project(icons)
 
-if(qmlui)
+if(qlc6)
+    set(desktop_FILES qlcplus6.desktop)
+elseif(qmlui)
     set(desktop_FILES qlcplus5.desktop)
 else()
     set(desktop_FILES
@@ -17,7 +19,9 @@ install(FILES ${icons_SRCS} DESTINATION ${INSTALLROOT}/share/pixmaps/)
 
 install(FILES qlcplus.xml DESTINATION ${INSTALLROOT}/share/mime/packages)
 
-if(qmlui)
+if(qlc6)
+    set(appdata_FILES org.qlcplus.QLCPlus6.appdata.xml)
+elseif(qmlui)
     set(appdata_FILES org.qlcplus.QLCPlus5.appdata.xml)
 else()
     set(appdata_FILES
