@@ -6,7 +6,7 @@
                XML save/load with Effect/Params/Embedded, fix external callers)
 - [x] Phase 3  Keyframe / Bezier paths and per-channel keyframe tracks
 - [x] Phase 4  Arbitrary channels (dimmer, colour, gobo, raw) in EFXFixture
-- [ ] Phase 5  QML editor rewrite
+- [x] Phase 5  QML editor: effect picker and dynamic parameter controls (no Lissajous-specific fields)
 - [ ] Phase 6  Library hot reload (QFileSystemWatcher)
 - [ ] Phase 7  Built-in HTTP API server for uploading effects from an external generator
                (user request, project independent library)
